@@ -1,5 +1,7 @@
 const BASE_URL = "https://es.openfoodfacts.org/cgi/search.pl";
-const USER_AGENT = "MacrosIA/0.1 (josemasia2004@gmail.com)";
+const USER_AGENT = "MacrosIA/0.1 (tu-email@ejemplo.com)";
+
+const VARIANTES = ["zero", "light", "sin azucar", "diet", "sin cafeina", "cero", "desnatad", "ultra", "0"];
 
 export type Producto100g = {
   nombre: string;
@@ -14,12 +16,60 @@ export function normalizar(s: string) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function palabras(s: string) {
+  return normalizar(s)
+    .split(" ")
+    .filter((w) => w.length > 1);
+}
+
+function contieneVariante(textoN: string, variante: string) {
+  return ` ${textoN} `.includes(` ${variante}`);
 }
 
 function n(v: unknown) {
   const x = typeof v === "number" ? v : parseFloat(String(v));
   return Number.isFinite(x) && x >= 0 ? x : null;
+}
+
+function coincideMarca(marca: string, brands: string) {
+  const marcaN = normalizar(marca);
+  if (!marcaN) return true;
+  const primera = marcaN.split(" ")[0];
+  const lista = String(brands).split(",").map(normalizar).filter(Boolean);
+  return lista.some((b) => b.includes(marcaN) || marcaN.includes(b) || b.split(" ")[0] === primera);
+}
+
+function puntuar(nombreProducto: string, busqueda: string) {
+  const nombreN = normalizar(nombreProducto);
+  const busquedaN = normalizar(busqueda);
+
+  let score = palabras(busqueda).filter((w) => nombreN.includes(w)).length;
+
+  for (const v of VARIANTES) {
+    const enProducto = contieneVariante(nombreN, v);
+    const pedida = contieneVariante(busquedaN, v);
+    if (enProducto !== pedida) score -= 3;
+  }
+
+  return score;
+}
+
+function extraerMacros(p: any): Omit<Producto100g, "nombre"> | null {
+  const nut = p.nutriments ?? {};
+  let kcal = n(nut["energy-kcal_100g"]);
+  if (kcal == null) {
+    const kj = n(nut["energy_100g"]);
+    if (kj != null) kcal = kj / 4.184;
+  }
+  const proteina = n(nut.proteins_100g);
+  const carbos = n(nut.carbohydrates_100g);
+  const grasa = n(nut.fat_100g);
+  if (kcal == null || proteina == null || carbos == null || grasa == null) return null;
+  return { kcal, proteina, carbos, grasa };
 }
 
 export async function buscarEnOFF(marca: string, busqueda: string): Promise<Producto100g | null> {
@@ -28,7 +78,7 @@ export async function buscarEnOFF(marca: string, busqueda: string): Promise<Prod
     search_simple: "1",
     action: "process",
     json: "1",
-    page_size: "10",
+    page_size: "20",
     fields: "product_name,product_name_es,brands,nutriments",
   });
 
@@ -44,27 +94,26 @@ export async function buscarEnOFF(marca: string, busqueda: string): Promise<Prod
 
     const data = await res.json();
     const productos: any[] = data?.products ?? [];
-    const marcaN = normalizar(marca);
+
+    let mejor: Producto100g | null = null;
+    let mejorScore = -Infinity;
 
     for (const p of productos) {
-      if (marcaN && !normalizar(p.brands ?? "").includes(marcaN)) continue;
+      if (!coincideMarca(marca, p.brands ?? "")) continue;
 
-      const nut = p.nutriments ?? {};
-      let kcal = n(nut["energy-kcal_100g"]);
-      if (kcal == null) {
-        const kj = n(nut["energy_100g"]);
-        if (kj != null) kcal = kj / 4.184;
-      }
-      const proteina = n(nut.proteins_100g);
-      const carbos = n(nut.carbohydrates_100g);
-      const grasa = n(nut.fat_100g);
-      if (kcal == null || proteina == null || carbos == null || grasa == null) continue;
+      const macros = extraerMacros(p);
+      if (!macros) continue;
 
       const nombre = String(p.product_name_es || p.product_name || busqueda).trim();
-      return { nombre, kcal, proteina, carbos, grasa };
+      const score = puntuar(nombre, busqueda);
+
+      if (score > mejorScore) {
+        mejorScore = score;
+        mejor = { nombre, ...macros };
+      }
     }
 
-    return null;
+    return mejor;
   } finally {
     clearTimeout(timeout);
   }

@@ -22,7 +22,7 @@ export type Totals = {
   fat: number;
 };
 
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
@@ -72,6 +72,11 @@ export async function migrate(db: SQLiteDatabase) {
       );
     `);
     version = 3;
+  }
+
+  if (version === 3) {
+    await db.execAsync("DELETE FROM products_cache;");
+    version = 4;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);

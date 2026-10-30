@@ -32,7 +32,9 @@ Reglas:
 Productos de marca o envasados:
 - Si un elemento es un producto envasado o de una marca concreta (menciona una marca o supermercado: Hacendado, Mercadona, Lidl, Carrefour, Danone, Doritos, Coca-Cola, etc.), pon es_producto = true. No lo separes en ingredientes: es un único elemento.
 - En "marca" pon la marca del producto. Si dice Mercadona, la marca es Hacendado.
-- En "busqueda" pon el nombre corto del producto sin la marca (ej: "lasaña boloñesa", "yogur griego").
+- En "busqueda" pon el nombre corto del producto sin la marca (ej: "lasaña boloñesa", "yogur griego"). Si el nombre del producto es la propia marca, repítela (ej: marca "Coca-Cola", busqueda "coca-cola"; marca "Monster", busqueda "monster energy").
+- Si el usuario indica una variante (zero, light, sin azúcar, sin cafeína, un sabor concreto…), inclúyela en "busqueda". Si no la indica, no añadas ninguna variante: es la versión normal.
+- En "marca" usa el nombre corto de la marca (ej: "Monster", no "Monster Energy Company").
 - Si no indica cantidad, usa el peso del envase o ración individual habitual.
 - Aunque sea un producto, estima igualmente sus valores.
 - Si no es un producto de marca: es_producto = false, y "marca" y "busqueda" vacíos.`;
