@@ -1,4 +1,5 @@
 import { SQLiteDatabase } from "expo-sqlite";
+import type { Producto100g } from "./openfoodfacts";
 
 export type Meal = {
   id: number;
@@ -21,7 +22,7 @@ export type Totals = {
   fat: number;
 };
 
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
@@ -55,6 +56,22 @@ export async function migrate(db: SQLiteDatabase) {
       );
     `);
     version = 2;
+  }
+
+  if (version === 2) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS products_cache (
+        clave TEXT PRIMARY KEY NOT NULL,
+        encontrado INTEGER NOT NULL,
+        nombre TEXT,
+        kcal REAL,
+        proteina REAL,
+        carbos REAL,
+        grasa REAL,
+        actualizado TEXT NOT NULL
+      );
+    `);
+    version = 3;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
@@ -100,5 +117,36 @@ export function sumTotals(meals: Meal[]): Totals {
       fat: acc.fat + m.fat,
     }),
     { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+  );
+}
+
+export type CachedProduct = {
+  clave: string;
+  encontrado: number;
+  nombre: string | null;
+  kcal: number | null;
+  proteina: number | null;
+  carbos: number | null;
+  grasa: number | null;
+  actualizado: string;
+};
+
+export function getCachedProduct(db: SQLiteDatabase, clave: string) {
+  return db.getFirstAsync<CachedProduct>("SELECT * FROM products_cache WHERE clave = ?", clave);
+}
+
+export function saveCachedProduct(db: SQLiteDatabase, clave: string, p: Producto100g | null) {
+  return db.runAsync(
+    `INSERT OR REPLACE INTO products_cache
+      (clave, encontrado, nombre, kcal, proteina, carbos, grasa, actualizado)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    clave,
+    p ? 1 : 0,
+    p?.nombre ?? null,
+    p?.kcal ?? null,
+    p?.proteina ?? null,
+    p?.carbos ?? null,
+    p?.grasa ?? null,
+    new Date().toISOString(),
   );
 }
