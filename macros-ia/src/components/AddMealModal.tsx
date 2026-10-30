@@ -108,7 +108,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     try {
       const result = await analizarComida(texto.trim());
       const enriched = await enriquecerItems(db, result);
-      setItems(result.map((base) => ({ base, gramosText: String(base.gramos) })));
+      setItems(enriched.map((base) => ({ base, gramosText: String(base.gramos) })));
     } catch (e) {
       Alert.alert("Ups", e instanceof ApiError ? e.message : "Algo ha fallado.");
     } finally {
