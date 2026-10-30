@@ -1,0 +1,51 @@
+# dependencies
+node_modules/
+.npm
+.pnp.*
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# Wrangler / Cloudflare (local state and build output)
+.wrangler/
+dist/
+
+# secrets (use .dev.vars.example as a template)
+.dev.vars*
+!.dev.vars.example
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# test coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# TypeScript / tooling caches
+*.tsbuildinfo
+.eslintcache
+.cache/
+
+# editors / IDEs / OS
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Claude Code (local, per-user settings)
+.claude/settings.local.json
