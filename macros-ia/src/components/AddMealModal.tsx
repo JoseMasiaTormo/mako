@@ -16,6 +16,8 @@ import {
 import { NewMeal } from "../db";
 import { AiItem, analizarComida, ApiError } from "../api";
 import { colors } from "../theme";
+import { useSQLiteContext } from "expo-sqlite";
+import { enriquecerItems } from "../products";
 
 type Props = {
   visible: boolean;
@@ -41,7 +43,7 @@ function round1(n: number) {
 function scale(item: AiItem, grams: number): AiItem {
   const f = item.gramos > 0 ? grams / item.gramos : 1;
   return {
-    nombre: item.nombre,
+    ...item,
     gramos: grams,
     kcal: item.kcal * f,
     proteina: item.proteina * f,
@@ -85,6 +87,8 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const [loading, setLoading] = useState(false);
   const [manual, setManual] = useState(emptyManual);
 
+  const db = useSQLiteContext();
+
   const reset = () => {
     setMode("ia");
     setTexto("");
@@ -103,6 +107,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     setLoading(true);
     try {
       const result = await analizarComida(texto.trim());
+      const enriched = await enriquecerItems(db, result);
       setItems(result.map((base) => ({ base, gramosText: String(base.gramos) })));
     } catch (e) {
       Alert.alert("Ups", e instanceof ApiError ? e.message : "Algo ha fallado.");
@@ -198,9 +203,14 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
           <View key={`${item.nombre}-${index}`} style={styles.itemRow}>
             <View style={styles.itemInfo}>
               <Text style={styles.itemName}>{item.nombre}</Text>
-              <Text style={styles.itemMacros}>
-                P {Math.round(item.proteina)} · C {Math.round(item.carbos)} · G {Math.round(item.grasa)}
-              </Text>
+              <View style={styles.itemMeta}>
+                <Text style={[styles.badge, item.fuente === "etiqueta" ? styles.badgeEtiqueta : styles.badgeIa]}>
+                  {item.fuente === "etiqueta" ? "Etiqueta" : "Estimado"}
+                </Text>
+                <Text style={styles.itemMacros}>
+                  P {Math.round(item.proteina)} · C {Math.round(item.carbos)} · G {Math.round(item.grasa)}
+                </Text>
+              </View>
             </View>
             <TextInput
               style={styles.gramsInput}
@@ -308,6 +318,17 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     maxHeight: "90%",
   },
+  itemMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
+  badge: {
+    fontSize: 10,
+    fontWeight: "700",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: "hidden",
+  },
+  badgeEtiqueta: { backgroundColor: "#DCFCE7", color: colors.primary },
+  badgeIa: { backgroundColor: colors.bg, color: colors.muted },
   title: { fontSize: 20, fontWeight: "700", color: colors.text, marginBottom: 12 },
   tabs: {
     flexDirection: "row",
