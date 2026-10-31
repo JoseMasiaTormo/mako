@@ -1,6 +1,9 @@
 export interface Env {
 	GEMINI_API_KEY: string;
 	DB: D1Database;
+	// Opcionales: si no se definen se usan LIMITE_DISPOSITIVO / LIMITE_GLOBAL. Sirven sobre todo para los tests.
+	LIMITE_DISPOSITIVO?: string;
+	LIMITE_GLOBAL?: string;
 }
 
 type Item = {
@@ -302,12 +305,19 @@ async function leerEtiqueta(imagen: string, mimeType: string, apiKey: string) {
 	};
 }
 
-function limiteSuperado(uso: { usadasDispositivo: number; usadasTotal: number }) {
-	if (uso.usadasTotal > LIMITE_GLOBAL) {
+function leerLimite(valor: string | undefined, porDefecto: number) {
+	const n = Number(valor);
+	return Number.isInteger(n) && n > 0 ? n : porDefecto;
+}
+
+function limiteSuperado(uso: { usadasDispositivo: number; usadasTotal: number }, env: Env) {
+	const limiteGlobal = leerLimite(env.LIMITE_GLOBAL, LIMITE_GLOBAL);
+	const limiteDispositivo = leerLimite(env.LIMITE_DISPOSITIVO, LIMITE_DISPOSITIVO);
+	if (uso.usadasTotal > limiteGlobal) {
 		return json({ error: 'servicio_lleno' }, 429);
 	}
-	if (uso.usadasDispositivo > LIMITE_DISPOSITIVO) {
-		return json({ error: 'limite_diario', limite: LIMITE_DISPOSITIVO }, 429);
+	if (uso.usadasDispositivo > limiteDispositivo) {
+		return json({ error: 'limite_diario', limite: limiteDispositivo }, 429);
 	}
 	return null;
 }
@@ -324,7 +334,7 @@ async function rutaAnalizar(request: Request, env: Env, deviceId: string) {
 	if (!texto) return json({ error: 'texto_vacio' }, 400);
 	if (texto.length > MAX_LENGTH) return json({ error: 'texto_largo' }, 400);
 
-	const limite = limiteSuperado(await registrarUso(env.DB, deviceId));
+	const limite = limiteSuperado(await registrarUso(env.DB, deviceId), env);
 	if (limite) return limite;
 
 	const result = await analizar(texto, env.GEMINI_API_KEY);
@@ -354,7 +364,7 @@ async function rutaEtiqueta(request: Request, env: Env, deviceId: string) {
 	const tipo = typeof body.tipo === 'string' ? body.tipo : 'image/jpeg';
 	if (!TIPOS_IMAGEN.includes(tipo)) return json({ error: 'imagen_invalida' }, 400);
 
-	const limite = limiteSuperado(await registrarUso(env.DB, deviceId));
+	const limite = limiteSuperado(await registrarUso(env.DB, deviceId), env);
 	if (limite) return limite;
 
 	const result = await leerEtiqueta(imagen, tipo, env.GEMINI_API_KEY);
