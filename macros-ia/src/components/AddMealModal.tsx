@@ -20,6 +20,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { enriquecerItems } from "../products";
 import BarcodeScanner from "./BarcodeScanner";
 import { buscarPorCodigo, normalizar } from "../openfoodfacts";
+import { getDeviceId } from "../device";
 
 type Props = {
   visible: boolean;
@@ -110,7 +111,8 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     if (!texto.trim() || loading) return;
     setLoading(true);
     try {
-      const result = await analizarComida(texto.trim());
+      const deviceId = await getDeviceId(db);
+      const result = await analizarComida(texto.trim(), deviceId);
       const enriched = await enriquecerItems(db, result);
       setItems(enriched.map((base) => ({ base, gramosText: String(base.gramos) })));
     } catch (e) {

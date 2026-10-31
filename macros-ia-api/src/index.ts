@@ -1,5 +1,6 @@
 export interface Env {
 	GEMINI_API_KEY: string;
+	DB: D1Database;
 }
 
 type Item = {
@@ -17,6 +18,28 @@ type Item = {
 const MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
 const RETRY_STATUS = [500, 503, 504];
 const MAX_LENGTH = 300;
+
+const LIMITE_DISPOSITIVO = 50;
+const LIMITE_GLOBAL = 1000;
+const DEVICE_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const SQL_SUMAR = `
+	INSERT INTO uso_diario (device_id, dia, peticiones) VALUES (?, ?, 1)
+	ON CONFLICT(device_id, dia) DO UPDATE SET peticiones = peticiones + 1
+	RETURNING peticiones
+`;
+
+async function registrarUso(db: D1Database, deviceId: string) {
+	const dia = new Date().toISOString().slice(0, 10);
+	const stmt = db.prepare(SQL_SUMAR);
+
+	const [dispositivo, total] = await db.batch<{ peticiones: number }>([stmt.bind(deviceId, dia), stmt.bind('__total__', dia)]);
+
+	return {
+		usadasDispositivo: dispositivo.results[0]?.peticiones ?? 0,
+		usadasTotal: total.results[0]?.peticiones ?? 0,
+	};
+}
 
 const SYSTEM_PROMPT = `Eres un nutricionista que estima calorías y macronutrientes de comidas españolas.
 El usuario describe lo que ha comido en lenguaje natural, sin pesos.
@@ -180,6 +203,11 @@ export default {
 				return json({ error: 'falta_api_key' }, 500);
 			}
 
+			const deviceId = request.headers.get('X-Device-Id') ?? '';
+			if (!DEVICE_ID_REGEX.test(deviceId)) {
+				return json({ error: 'sin_dispositivo' }, 400);
+			}
+
 			let body: { texto?: unknown };
 			try {
 				body = await request.json();
@@ -190,6 +218,14 @@ export default {
 			const texto = typeof body.texto === 'string' ? body.texto.trim() : '';
 			if (!texto) return json({ error: 'texto_vacio' }, 400);
 			if (texto.length > MAX_LENGTH) return json({ error: 'texto_largo' }, 400);
+
+			const uso = await registrarUso(env.DB, deviceId);
+			if (uso.usadasTotal > LIMITE_GLOBAL) {
+				return json({ error: 'servicio_lleno' }, 429);
+			}
+			if (uso.usadasDispositivo > LIMITE_DISPOSITIVO) {
+				return json({ error: 'limite_diario', limite: LIMITE_DISPOSITIVO }, 429);
+			}
 
 			const result = await analizar(texto, env.GEMINI_API_KEY);
 			if ('error' in result) return json({ error: result.error }, result.status);

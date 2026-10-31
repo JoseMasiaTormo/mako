@@ -8,9 +8,16 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2026-10-23",
 	"observability": {
-		"enabled": true
+		"enabled": true,
 	},
-	"upload_source_maps": true
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "macros-ia-db",
+			"database_id": "336dee16-4650-409d-908a-e1c091d25163",
+		},
+	],
+	"upload_source_maps": true,
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
