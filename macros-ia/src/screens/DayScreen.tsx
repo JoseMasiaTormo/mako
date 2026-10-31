@@ -2,18 +2,33 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSQLiteContext } from "expo-sqlite";
-import { addMeal, deleteMeal, getMealsByDate, getSettings, Meal, NewMeal, setSettings, sumTotals } from "../db";
+import {
+  addMeal,
+  deleteMeal,
+  getGoals,
+  getMealsByDate,
+  getSettings,
+  Goals,
+  Meal,
+  NewMeal,
+  saveGoals,
+  setSettings,
+  sumTotals,
+} from "../db";
 import { addDays, labelFor, todayKey } from "../utils/date";
 import TotalsCard from "../components/TotalsCard";
 import MealItem from "../components/MealItem";
 import AddMealModal from "../components/AddMealModal";
+import GoalsModal from "../components/GoalsModal";
 import { colors } from "../theme";
 
 export default function DayScreen() {
   const db = useSQLiteContext();
   const [date, setDate] = useState(todayKey());
   const [meals, setMeals] = useState<Meal[]>([]);
+  const [goals, setGoals] = useState<Goals | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [goalsVisible, setGoalsVisible] = useState(false);
 
   const load = useCallback(async () => {
     const rows = await getMealsByDate(db, date);
@@ -25,12 +40,16 @@ export default function DayScreen() {
   }, [load]);
 
   useEffect(() => {
+    getGoals(db).then(setGoals);
+  }, [db]);
+
+  useEffect(() => {
     (async () => {
       const seen = await getSettings(db, "aviso_visto");
       if (!seen) {
         Alert.alert(
           "Antes de empezar",
-          "Las calorias y macros que calcula la IA son estimaciones aproximadas. Úsalas como orientación, no como un valor exacto.",
+          "Las calorías y macros que calcula la IA son estimaciones aproximadas. Úsalas como orientación, no como un valor exacto.",
           [{ text: "Entendido", onPress: () => setSettings(db, "aviso_visto", "1") }],
           { cancelable: false },
         );
@@ -42,6 +61,12 @@ export default function DayScreen() {
     await addMeal(db, { ...meal, date });
     setModalVisible(false);
     load();
+  };
+
+  const handleSaveGoals = async (g: Goals) => {
+    await saveGoals(db, g);
+    setGoals(g);
+    setGoalsVisible(false);
   };
 
   const handleDelete = (meal: Meal) => {
@@ -63,6 +88,13 @@ export default function DayScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <View style={styles.topBar}>
+        <Text style={styles.appTitle}>Macros IA</Text>
+        <Pressable onPress={() => setGoalsVisible(true)} hitSlop={12}>
+          <Text style={styles.gear}>⚙︎</Text>
+        </Pressable>
+      </View>
+
       <View style={styles.header}>
         <Pressable onPress={() => setDate((d) => addDays(d, -1))} hitSlop={12}>
           <Text style={styles.arrow}>‹</Text>
@@ -75,7 +107,7 @@ export default function DayScreen() {
         </Pressable>
       </View>
 
-      <TotalsCard totals={totals} />
+      <TotalsCard totals={totals} goals={goals} onSetGoals={() => setGoalsVisible(true)} />
 
       <FlatList
         data={meals}
@@ -90,18 +122,34 @@ export default function DayScreen() {
       </Pressable>
 
       <AddMealModal visible={modalVisible} onClose={() => setModalVisible(false)} onSave={handleAdd} />
+
+      <GoalsModal
+        visible={goalsVisible}
+        initial={goals}
+        onClose={() => setGoalsVisible(false)}
+        onSave={handleSaveGoals}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
+  appTitle: { fontSize: 22, fontWeight: "800", color: colors.text },
+  gear: { fontSize: 24, color: colors.text },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingVertical: 12,
   },
   arrow: { fontSize: 32, color: colors.text, paddingHorizontal: 8 },
   dateLabel: { fontSize: 18, fontWeight: "600", color: colors.text, textTransform: "capitalize" },

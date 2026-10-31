@@ -155,3 +155,37 @@ export function saveCachedProduct(db: SQLiteDatabase, clave: string, p: Producto
     new Date().toISOString(),
   );
 }
+
+export type Goals = Totals;
+
+const GOAL_KEYS = {
+  kcal: "obj_kcal",
+  protein: "obj_proteina",
+  carbs: "obj_carbos",
+  fat: "obj_grasa",
+} as const;
+
+export async function getGoals(db: SQLiteDatabase): Promise<Goals | null> {
+  const keys = Object.values(GOAL_KEYS);
+  const rows = await db.getAllAsync<{ key: string; value: string }>(
+    `SELECT key, value FROM settings WHERE key IN (${keys.map(() => "?").join(", ")})`,
+    ...keys,
+  );
+  if (!rows.length) return null;
+
+  const map: Record<string, number> = Object.fromEntries(rows.map((r) => [r.key, Number(r.value)]));
+  return {
+    kcal: map[GOAL_KEYS.kcal] || 0,
+    protein: map[GOAL_KEYS.protein] || 0,
+    carbs: map[GOAL_KEYS.carbs] || 0,
+    fat: map[GOAL_KEYS.fat] || 0,
+  };
+}
+
+export async function saveGoals(db: SQLiteDatabase, goals: Goals) {
+  await db.withTransactionAsync(async () => {
+    for (const [field, key] of Object.entries(GOAL_KEYS)) {
+      await setSettings(db, key, String(goals[field as keyof Goals]));
+    }
+  });
+}
