@@ -118,3 +118,45 @@ export async function buscarEnOFF(marca: string, busqueda: string): Promise<Prod
     clearTimeout(timeout);
   }
 }
+
+const PRODUCT_URL = "https://world.openfoodfacts.org/api/v2/product";
+
+export type ProductoCodigo = Producto100g & {
+  marca: string;
+  gramosSugeridos: number;
+};
+
+export async function buscarPorCodigo(codigo: string): Promise<ProductoCodigo | null> {
+  const params = new URLSearchParams({
+    fields: "product_name,product_name_es,brands,nutriments,serving_quantity,product_quantity",
+  });
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch(`${PRODUCT_URL}/${encodeURIComponent(codigo)}?${params.toString()}`, {
+      headers: { "User-Agent": USER_AGENT },
+      signal: controller.signal,
+    });
+    if (res.status == 404) return null;
+    if (!res.ok) throw new Error(`OFF ${res.status}`);
+
+    const data = await res.json();
+    if (data?.status !== 1 || !data.product) return null;
+
+    const p = data.product;
+    const macros = extraerMacros(p);
+    if (!macros) return null;
+
+    const nombre = String(p.product_name_es || p.product_name || "Producto").trim();
+    const marca = String(p.brands ?? "")
+      .split(",")[0]
+      .trim();
+    const gramos = n(p.serving_quantity) || n(p.product_quantity) || 100;
+
+    return { nombre, marca, gramosSugeridos: Math.round(gramos), ...macros };
+  } finally {
+    clearTimeout(timeout);
+  }
+}

@@ -22,7 +22,11 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-camera",
+      {
+        "cameraPermission": "Macros IA usa la cámara para escanear códigos de barras."
+      }
     ]
   }
 }
