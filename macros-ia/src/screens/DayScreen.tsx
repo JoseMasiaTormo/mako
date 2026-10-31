@@ -89,7 +89,7 @@ export default function DayScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <View style={styles.topBar}>
-        <Text style={styles.appTitle}>Macros IA</Text>
+        <Text style={styles.appTitle}>Mako</Text>
         <Pressable onPress={() => setGoalsVisible(true)} hitSlop={12}>
           <Text style={styles.gear}>⚙︎</Text>
         </Pressable>
