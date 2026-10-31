@@ -23,10 +23,12 @@
     },
     "plugins": [
       "expo-sqlite",
-      "expo-camera",
-      {
-        "cameraPermission": "Macros IA usa la cámara para escanear códigos de barras."
-      }
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Macros IA usa la cámara para escanear códigos de barras."
+        }
+      ]
     ]
   }
 }

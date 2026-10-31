@@ -18,6 +18,8 @@ import { AiItem, analizarComida, ApiError } from "../api";
 import { colors } from "../theme";
 import { useSQLiteContext } from "expo-sqlite";
 import { enriquecerItems } from "../products";
+import BarcodeScanner from "./BarcodeScanner";
+import { buscarPorCodigo, normalizar } from "../openfoodfacts";
 
 type Props = {
   visible: boolean;
@@ -86,6 +88,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const [items, setItems] = useState<EditableItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [manual, setManual] = useState(emptyManual);
+  const [scanning, setScanning] = useState(false);
 
   const db = useSQLiteContext();
 
@@ -95,6 +98,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     setItems([]);
     setLoading(false);
     setManual(emptyManual);
+    setScanning(false);
   };
 
   const close = () => {
@@ -111,6 +115,45 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
       setItems(enriched.map((base) => ({ base, gramosText: String(base.gramos) })));
     } catch (e) {
       Alert.alert("Ups", e instanceof ApiError ? e.message : "Algo ha fallado.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleScanned = async (codigo: string) => {
+    setScanning(false);
+    setLoading(true);
+    try {
+      const p = await buscarPorCodigo(codigo);
+      if (!p) {
+        Alert.alert(
+          "Producto no encontrado",
+          "No está en Open Food Facts o le faltan datos. Escríbelo y lo estina la IA.",
+        );
+        return;
+      }
+
+      const f = p.gramosSugeridos / 100;
+      const incluyeMarca = p.marca && normalizar(p.nombre).includes(normalizar(p.marca));
+      const nombre = p.marca && !incluyeMarca ? `${p.nombre} (${p.marca})` : p.nombre;
+
+      const base: AiItem = {
+        nombre,
+        gramos: p.gramosSugeridos,
+        kcal: Math.round(p.kcal * f),
+        proteina: round1(p.proteina * f),
+        carbos: round1(p.carbos * f),
+        grasa: round1(p.grasa * f),
+        es_producto: true,
+        marca: p.marca,
+        busqueda: "",
+        fuente: "etiqueta",
+      };
+
+      setTexto(nombre);
+      setItems([{ base, gramosText: String(base.gramos) }]);
+    } catch {
+      Alert.alert("Ups", "No se pudo conectar. Revisa tu conexión a internet.");
     } finally {
       setLoading(false);
     }
@@ -180,6 +223,13 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
             editable={!loading}
           />
           <Text style={styles.hint}>Los valores son estimaciones aproximadas.</Text>
+          <Pressable
+            style={[styles.scanButton, loading && styles.disabled]}
+            onPress={() => setScanning(true)}
+            disabled={loading}
+          >
+            <Text style={styles.scanText}>Escanear código de barras</Text>
+          </Pressable>
           <View style={styles.buttons}>
             <Pressable style={[styles.button, styles.cancel]} onPress={close}>
               <Text style={styles.cancelText}>Cancelar</Text>
@@ -277,33 +327,42 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   );
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={close}>
-      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={styles.sheet}>
-          <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={styles.title}>Añadir comida</Text>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={scanning ? () => setScanning(false) : close}
+    >
+      {scanning ? (
+        <BarcodeScanner onScanned={handleScanned} onClose={() => setScanning(false)} />
+      ) : (
+        <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={styles.sheet}>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <Text style={styles.title}>Añadir comida</Text>
 
-            <View style={styles.tabs}>
-              <Pressable
-                style={[styles.tab, mode === "ia" && styles.tabActive]}
-                onPress={() => setMode("ia")}
-                disabled={loading}
-              >
-                <Text style={[styles.tabText, mode === "ia" && styles.tabTextActive]}>Con IA</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.tab, mode === "manual" && styles.tabActive]}
-                onPress={() => setMode("manual")}
-                disabled={loading}
-              >
-                <Text style={[styles.tabText, mode === "manual" && styles.tabTextActive]}>Manual</Text>
-              </Pressable>
-            </View>
+              <View style={styles.tabs}>
+                <Pressable
+                  style={[styles.tab, mode === "ia" && styles.tabActive]}
+                  onPress={() => setMode("ia")}
+                  disabled={loading}
+                >
+                  <Text style={[styles.tabText, mode === "ia" && styles.tabTextActive]}>Con IA</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.tab, mode === "manual" && styles.tabActive]}
+                  onPress={() => setMode("manual")}
+                  disabled={loading}
+                >
+                  <Text style={[styles.tabText, mode === "manual" && styles.tabTextActive]}>Manual</Text>
+                </Pressable>
+              </View>
 
-            {mode === "ia" ? renderIa() : renderManual()}
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
+              {mode === "ia" ? renderIa() : renderManual()}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      )}
     </Modal>
   );
 }
@@ -391,4 +450,13 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.5 },
   cancelText: { color: colors.text, fontWeight: "600", fontSize: 16 },
   saveText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+  scanButton: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: "center",
+  },
+  scanText: { color: colors.primary, fontWeight: "600", fontSize: 15 },
 });
