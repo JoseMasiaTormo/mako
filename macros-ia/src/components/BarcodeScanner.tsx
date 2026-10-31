@@ -1,8 +1,8 @@
 import { useRef } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BarcodeScanningResult, Camera, CameraView, useCameraPermissions } from "expo-camera";
-import { colors } from "../theme";
+import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
+import CameraPermission from "./CameraPermission";
 
 type Props = {
   onScanned: (codigo: string) => void;
@@ -25,21 +25,12 @@ export default function BarcodeScanner({ onScanned, onClose }: Props) {
 
   if (!permission.granted) {
     return (
-      <SafeAreaView style={[styles.container, styles.center]}>
-        <Text style={styles.message}>Necesito permiso para usar la cámara y leer el código de barras.</Text>
-        {permission.canAskAgain ? (
-          <Pressable style={styles.button} onPress={requestPermission}>
-            <Text style={styles.buttonText}>Dar permiso</Text>
-          </Pressable>
-        ) : (
-          <Pressable style={styles.button} onPress={() => Linking.openSettings()}>
-            <Text style={styles.buttonText}>Abrir ajustes</Text>
-          </Pressable>
-        )}
-        <Pressable style={styles.link} onPress={onClose}>
-          <Text style={styles.linkText}>Cancelar</Text>
-        </Pressable>
-      </SafeAreaView>
+      <CameraPermission
+        permission={permission}
+        requestPermission={requestPermission}
+        message="Necesito permiso para usar la cámara y leer el código de barras."
+        onClose={onClose}
+      />
     );
   }
 
@@ -64,17 +55,6 @@ export default function BarcodeScanner({ onScanned, onClose }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
-  center: { justifyContent: "center", alignItems: "center", padding: 24 },
-  message: { color: "#fff", fontSize: 16, textAlign: "center", marginBottom: 20 },
-  button: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-  },
-  buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  link: { marginTop: 16, padding: 8 },
-  linkText: { color: "#fff", fontSize: 15 },
   overlay: {
     flex: 1,
     alignItems: "center",

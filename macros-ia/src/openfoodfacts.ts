@@ -20,7 +20,7 @@ export function normalizar(s: string) {
     .trim();
 }
 
-function palabras(s: string) {
+export function palabras(s: string) {
   return normalizar(s)
     .split(" ")
     .filter((w) => w.length > 1);
@@ -35,7 +35,7 @@ function n(v: unknown) {
   return Number.isFinite(x) && x >= 0 ? x : null;
 }
 
-function coincideMarca(marca: string, brands: string) {
+export function coincideMarca(marca: string, brands: string) {
   const marcaN = normalizar(marca);
   if (!marcaN) return true;
   const primera = marcaN.split(" ")[0];
@@ -43,19 +43,17 @@ function coincideMarca(marca: string, brands: string) {
   return lista.some((b) => b.includes(marcaN) || marcaN.includes(b) || b.split(" ")[0] === primera);
 }
 
-function puntuar(nombreProducto: string, busqueda: string) {
+/** Cuántas variantes (zero, light, sin azúcar…) aparecen en uno de los textos y no en el otro. */
+export function variantesDistintas(nombreProducto: string, busqueda: string) {
   const nombreN = normalizar(nombreProducto);
   const busquedaN = normalizar(busqueda);
+  return VARIANTES.filter((v) => contieneVariante(nombreN, v) !== contieneVariante(busquedaN, v)).length;
+}
 
-  let score = palabras(busqueda).filter((w) => nombreN.includes(w)).length;
-
-  for (const v of VARIANTES) {
-    const enProducto = contieneVariante(nombreN, v);
-    const pedida = contieneVariante(busquedaN, v);
-    if (enProducto !== pedida) score -= 3;
-  }
-
-  return score;
+function puntuar(nombreProducto: string, busqueda: string) {
+  const nombreN = normalizar(nombreProducto);
+  const score = palabras(busqueda).filter((w) => nombreN.includes(w)).length;
+  return score - 3 * variantesDistintas(nombreProducto, busqueda);
 }
 
 function extraerMacros(p: any): Omit<Producto100g, "nombre"> | null {

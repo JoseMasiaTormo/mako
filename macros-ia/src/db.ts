@@ -22,7 +22,7 @@ export type Totals = {
   fat: number;
 };
 
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
@@ -77,6 +77,25 @@ export async function migrate(db: SQLiteDatabase) {
   if (version === 3) {
     await db.execAsync("DELETE FROM products_cache;");
     version = 4;
+  }
+
+  if (version === 4) {
+    // Productos que añade el usuario. UNIQUE en codigo permite varios NULL (productos sin código).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS mis_productos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        codigo TEXT UNIQUE,
+        nombre TEXT NOT NULL,
+        marca TEXT NOT NULL DEFAULT '',
+        kcal REAL NOT NULL DEFAULT 0,
+        proteina REAL NOT NULL DEFAULT 0,
+        carbos REAL NOT NULL DEFAULT 0,
+        grasa REAL NOT NULL DEFAULT 0,
+        racion_g REAL,
+        creado TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    version = 5;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
@@ -154,6 +173,60 @@ export function saveCachedProduct(db: SQLiteDatabase, clave: string, p: Producto
     p?.grasa ?? null,
     new Date().toISOString(),
   );
+}
+
+/** Producto añadido por el usuario. Valores por 100 g. */
+export type MiProducto = {
+  id: number;
+  codigo: string | null;
+  nombre: string;
+  marca: string;
+  kcal: number;
+  proteina: number;
+  carbos: number;
+  grasa: number;
+  racion_g: number | null;
+  creado: string;
+};
+
+export type NuevoMiProducto = Omit<MiProducto, "id" | "creado">;
+
+export function getMiProductoPorCodigo(db: SQLiteDatabase, codigo: string) {
+  return db.getFirstAsync<MiProducto>("SELECT * FROM mis_productos WHERE codigo = ?", codigo);
+}
+
+export function getMisProductos(db: SQLiteDatabase) {
+  return db.getAllAsync<MiProducto>("SELECT * FROM mis_productos ORDER BY creado DESC, id DESC");
+}
+
+/** Guarda un producto. Si ya hay uno con el mismo código, lo actualiza. Devuelve su id. */
+export async function saveMiProducto(db: SQLiteDatabase, p: NuevoMiProducto) {
+  const row = await db.getFirstAsync<{ id: number }>(
+    `INSERT INTO mis_productos (codigo, nombre, marca, kcal, proteina, carbos, grasa, racion_g)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(codigo) DO UPDATE SET
+      nombre = excluded.nombre,
+      marca = excluded.marca,
+      kcal = excluded.kcal,
+      proteina = excluded.proteina,
+      carbos = excluded.carbos,
+      grasa = excluded.grasa,
+      racion_g = excluded.racion_g
+    RETURNING id`,
+    p.codigo,
+    p.nombre,
+    p.marca,
+    p.kcal,
+    p.proteina,
+    p.carbos,
+    p.grasa,
+    p.racion_g,
+  );
+  return row?.id ?? null;
+}
+
+export function deleteMiProducto(db: SQLiteDatabase, id: number) {
+  return db.runAsync("DELETE FROM mis_productos WHERE id = ?", id);
 }
 
 export type Goals = Totals;

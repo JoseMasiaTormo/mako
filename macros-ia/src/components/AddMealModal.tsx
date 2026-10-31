@@ -13,14 +13,16 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { NewMeal } from "../db";
-import { AiItem, analizarComida, ApiError } from "../api";
+import { getMiProductoPorCodigo, NewMeal, NuevoMiProducto, saveMiProducto } from "../db";
+import { AiItem, analizarComida, ApiError, EtiquetaLeida, leerEtiqueta } from "../api";
 import { colors } from "../theme";
 import { useSQLiteContext } from "expo-sqlite";
-import { enriquecerItems } from "../products";
+import { enriquecerItems, itemDeEtiqueta } from "../products";
 import BarcodeScanner from "./BarcodeScanner";
-import { buscarPorCodigo, normalizar } from "../openfoodfacts";
+import LabelCamera from "./LabelCamera";
+import { buscarPorCodigo } from "../openfoodfacts";
 import { getDeviceId } from "../device";
+import { prepararFoto } from "../image";
 
 type Props = {
   visible: boolean;
@@ -33,6 +35,30 @@ type EditableItem = { base: AiItem; gramosText: string };
 
 const emptyManual = { name: "", grams: "", kcal: "", protein: "", carbs: "", fat: "" };
 type ManualKey = keyof typeof emptyManual;
+
+// Formulario de "Añadir producto". Los valores nutricionales son por 100 g.
+const emptyProduct = { codigo: "", nombre: "", marca: "", racion: "", kcal: "", proteina: "", carbos: "", grasa: "" };
+type ProductDraft = typeof emptyProduct;
+type ProductKey = keyof ProductDraft;
+
+/** Texto para un campo numérico del formulario: "12.5", o "" si no hay valor. */
+function numText(n: number | null) {
+  return n == null ? "" : String(Math.round(n * 10) / 10);
+}
+
+/** Rellena el formulario con lo leído en la etiqueta. Nombre, marca y ración solo si estaban vacíos. */
+function rellenarConEtiqueta(d: ProductDraft, e: EtiquetaLeida): ProductDraft {
+  return {
+    ...d,
+    nombre: d.nombre.trim() ? d.nombre : e.nombre,
+    marca: d.marca.trim() ? d.marca : e.marca,
+    racion: d.racion.trim() ? d.racion : numText(e.racion_g),
+    kcal: numText(Math.round(e.kcal)),
+    proteina: numText(e.proteina),
+    carbos: numText(e.carbos),
+    grasa: numText(e.grasa),
+  };
+}
 
 function num(v: string) {
   const n = parseFloat(v.replace(",", "."));
@@ -90,6 +116,10 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const [loading, setLoading] = useState(false);
   const [manual, setManual] = useState(emptyManual);
   const [scanning, setScanning] = useState(false);
+  const [product, setProduct] = useState<ProductDraft | null>(null);
+  const [capturingLabel, setCapturingLabel] = useState(false);
+  const [readingLabel, setReadingLabel] = useState(false);
+  const [savingProduct, setSavingProduct] = useState(false);
 
   const db = useSQLiteContext();
 
@@ -100,6 +130,10 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     setLoading(false);
     setManual(emptyManual);
     setScanning(false);
+    setProduct(null);
+    setCapturingLabel(false);
+    setReadingLabel(false);
+    setSavingProduct(false);
   };
 
   const close = () => {
@@ -122,43 +156,99 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     }
   };
 
+  const mostrarProducto = (base: AiItem) => {
+    setTexto(base.nombre);
+    setItems([{ base, gramosText: String(base.gramos) }]);
+  };
+
   const handleScanned = async (codigo: string) => {
     setScanning(false);
     setLoading(true);
     try {
-      const p = await buscarPorCodigo(codigo);
-      if (!p) {
-        Alert.alert(
-          "Producto no encontrado",
-          "No está en Open Food Facts o le faltan datos. Escríbelo y lo estina la IA.",
-        );
+      // 1. Mis productos (sin red). 2. Open Food Facts.
+      const mio = await getMiProductoPorCodigo(db, codigo);
+      if (mio) {
+        mostrarProducto(itemDeEtiqueta(mio, mio.marca, mio.racion_g || 100));
         return;
       }
 
-      const f = p.gramosSugeridos / 100;
-      const incluyeMarca = p.marca && normalizar(p.nombre).includes(normalizar(p.marca));
-      const nombre = p.marca && !incluyeMarca ? `${p.nombre} (${p.marca})` : p.nombre;
+      const p = await buscarPorCodigo(codigo);
+      if (!p) {
+        Alert.alert("Producto no encontrado", "No está en Open Food Facts o le faltan datos. ¿Quieres añadirlo tú?", [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Añadir producto", onPress: () => setProduct({ ...emptyProduct, codigo }) },
+        ]);
+        return;
+      }
 
-      const base: AiItem = {
-        nombre,
-        gramos: p.gramosSugeridos,
-        kcal: Math.round(p.kcal * f),
-        proteina: round1(p.proteina * f),
-        carbos: round1(p.carbos * f),
-        grasa: round1(p.grasa * f),
-        es_producto: true,
-        marca: p.marca,
-        busqueda: "",
-        fuente: "etiqueta",
-      };
-
-      setTexto(nombre);
-      setItems([{ base, gramosText: String(base.gramos) }]);
+      mostrarProducto(itemDeEtiqueta(p, p.marca, p.gramosSugeridos));
     } catch {
       Alert.alert("Ups", "No se pudo conectar. Revisa tu conexión a internet.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const setProductField = (key: ProductKey) => (value: string) => setProduct((d) => (d ? { ...d, [key]: value } : d));
+
+  const handleLabelPhoto = async (photo: { uri: string; width: number }) => {
+    setCapturingLabel(false);
+    setReadingLabel(true);
+    try {
+      let imagen: string;
+      try {
+        imagen = await prepararFoto(photo.uri, photo.width);
+      } catch {
+        throw new ApiError("No se pudo procesar la foto. Inténtalo de nuevo.");
+      }
+      const deviceId = await getDeviceId(db);
+      const leida = await leerEtiqueta(imagen, deviceId);
+      // Si el usuario ha cerrado el formulario mientras tanto, no se reabre.
+      setProduct((d) => (d ? rellenarConEtiqueta(d, leida) : d));
+    } catch (e) {
+      Alert.alert("Ups", e instanceof ApiError ? e.message : "Algo ha fallado.");
+    } finally {
+      setReadingLabel(false);
+    }
+  };
+
+  const saveProduct = async () => {
+    if (!product || savingProduct || readingLabel) return;
+    const nombre = product.nombre.trim();
+    if (!nombre) {
+      Alert.alert("Falta el nombre");
+      return;
+    }
+    const faltan = [product.kcal, product.proteina, product.carbos, product.grasa].some((v) => !v.trim());
+    if (faltan) {
+      Alert.alert("Faltan datos", "Rellena las kcal, proteína, carbos y grasa por 100 g (pon 0 si no tiene).");
+      return;
+    }
+
+    const racion = num(product.racion);
+    const nuevo: NuevoMiProducto = {
+      codigo: product.codigo || null,
+      nombre,
+      marca: product.marca.trim(),
+      kcal: num(product.kcal),
+      proteina: num(product.proteina),
+      carbos: num(product.carbos),
+      grasa: num(product.grasa),
+      racion_g: racion > 0 ? racion : null,
+    };
+
+    setSavingProduct(true);
+    try {
+      await saveMiProducto(db, nuevo);
+    } catch {
+      Alert.alert("Ups", "No se pudo guardar el producto.");
+      setSavingProduct(false);
+      return;
+    }
+    // Se usa lo que se ha guardado (nuevo), no los textos del formulario.
+    mostrarProducto(itemDeEtiqueta(nuevo, nuevo.marca, nuevo.racion_g || 100));
+    setProduct(null);
+    setSavingProduct(false);
   };
 
   const setItemGrams = (index: number) => (value: string) =>
@@ -328,39 +418,109 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     </>
   );
 
+  const renderProducto = (d: ProductDraft) => {
+    const busy = readingLabel || savingProduct;
+    return (
+      <>
+        {d.codigo ? <Text style={styles.hint}>Código {d.codigo}</Text> : null}
+        <Pressable
+          style={[styles.scanButton, styles.photoButton, busy && styles.disabled]}
+          onPress={() => setCapturingLabel(true)}
+          disabled={busy}
+        >
+          {readingLabel ? (
+            <View style={styles.readingRow}>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={styles.scanText}>Leyendo la etiqueta…</Text>
+            </View>
+          ) : (
+            <Text style={styles.scanText}>Rellenar con una foto de la etiqueta</Text>
+          )}
+        </Pressable>
+        <Field label="Nombre" value={d.nombre} onChangeText={setProductField("nombre")} placeholder="Yogur griego" />
+        <View style={styles.row}>
+          <Field label="Marca" value={d.marca} onChangeText={setProductField("marca")} placeholder="Hacendado" />
+          <Field
+            label="Ración (g)"
+            value={d.racion}
+            onChangeText={setProductField("racion")}
+            placeholder="125"
+            numeric
+          />
+        </View>
+        <Text style={styles.sectionLabel}>Por 100 g</Text>
+        <View style={styles.row}>
+          <Field label="Kcal" value={d.kcal} onChangeText={setProductField("kcal")} numeric />
+          <Field label="Proteína (g)" value={d.proteina} onChangeText={setProductField("proteina")} numeric />
+        </View>
+        <View style={styles.row}>
+          <Field label="Carbos (g)" value={d.carbos} onChangeText={setProductField("carbos")} numeric />
+          <Field label="Grasa (g)" value={d.grasa} onChangeText={setProductField("grasa")} numeric />
+        </View>
+        <Text style={styles.hint}>Revisa los valores antes de guardar. Se guardará en Mis productos.</Text>
+        <View style={styles.buttons}>
+          <Pressable style={[styles.button, styles.cancel]} onPress={() => setProduct(null)} disabled={savingProduct}>
+            <Text style={styles.cancelText}>Cancelar</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, styles.save, busy && styles.disabled]}
+            onPress={saveProduct}
+            disabled={busy}
+          >
+            {savingProduct ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Guardar</Text>}
+          </Pressable>
+        </View>
+      </>
+    );
+  };
+
+  const onRequestClose = () => {
+    if (scanning) setScanning(false);
+    else if (capturingLabel) setCapturingLabel(false);
+    else if (product) {
+      if (!savingProduct) setProduct(null);
+    } else close();
+  };
+
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={scanning ? () => setScanning(false) : close}
-    >
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onRequestClose}>
       {scanning ? (
         <BarcodeScanner onScanned={handleScanned} onClose={() => setScanning(false)} />
+      ) : capturingLabel ? (
+        <LabelCamera onCaptured={handleLabelPhoto} onClose={() => setCapturingLabel(false)} />
       ) : (
         <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={styles.sheet}>
             <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.title}>Añadir comida</Text>
+              {product ? (
+                <>
+                  <Text style={styles.title}>Añadir producto</Text>
+                  {renderProducto(product)}
+                </>
+              ) : (
+                <>
+                  <Text style={styles.title}>Añadir comida</Text>
 
-              <View style={styles.tabs}>
-                <Pressable
-                  style={[styles.tab, mode === "ia" && styles.tabActive]}
-                  onPress={() => setMode("ia")}
-                  disabled={loading}
-                >
-                  <Text style={[styles.tabText, mode === "ia" && styles.tabTextActive]}>Con IA</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.tab, mode === "manual" && styles.tabActive]}
-                  onPress={() => setMode("manual")}
-                  disabled={loading}
-                >
-                  <Text style={[styles.tabText, mode === "manual" && styles.tabTextActive]}>Manual</Text>
-                </Pressable>
-              </View>
+                  <View style={styles.tabs}>
+                    <Pressable
+                      style={[styles.tab, mode === "ia" && styles.tabActive]}
+                      onPress={() => setMode("ia")}
+                      disabled={loading}
+                    >
+                      <Text style={[styles.tabText, mode === "ia" && styles.tabTextActive]}>Con IA</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.tab, mode === "manual" && styles.tabActive]}
+                      onPress={() => setMode("manual")}
+                      disabled={loading}
+                    >
+                      <Text style={[styles.tabText, mode === "manual" && styles.tabTextActive]}>Manual</Text>
+                    </Pressable>
+                  </View>
 
-              {mode === "ia" ? renderIa() : renderManual()}
+                  {mode === "ia" ? renderIa() : renderManual()}
+                </>
+              )}
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
@@ -461,4 +621,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   scanText: { color: colors.primary, fontWeight: "600", fontSize: 15 },
+  photoButton: { marginTop: 4, marginBottom: 16 },
+  readingRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.text, marginBottom: 8 },
 });

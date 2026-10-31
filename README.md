@@ -355,6 +355,30 @@ npm run web        # navegador
 | `502` | `ia` | Respuesta de la IA inválida |
 | `503` | `saturado` | Gemini saturado tras todos los reintentos |
 
+### `POST /etiqueta`
+
+Lee la tabla nutricional de una foto. Necesita la cabecera `X-Device-Id` y cuenta para el límite diario, igual que `/analizar`.
+
+**Request** (la app reduce antes la foto a 1024 px de ancho, JPEG 0.7)
+
+```json
+{ "imagen": "<JPEG en base64>", "tipo": "image/jpeg" }
+```
+
+**Response `200`** (valores por 100 g; `nombre`, `marca` y `racion_g` vacíos/`null` si no se ven)
+
+```json
+{ "kcal": 97, "proteina": 3.6, "carbos": 4.1, "grasa": 7.5, "nombre": "Yogur griego", "marca": "Hacendado", "racion_g": 125 }
+```
+
+**Errores propios** (además de los de `/analizar`)
+
+| Código | `error` | Significado |
+|:-:|---|---|
+| `400` | `imagen_vacia` / `imagen_invalida` | Sin imagen, base64 incorrecto o tipo no admitido (jpeg, png, webp) |
+| `413` | `imagen_grande` | Imagen de más de ~1,5 MB en base64 |
+| `422` | `etiqueta_ilegible` | La IA no ha podido leer la tabla con seguridad |
+
 ---
 
 ## 🗺️ Próximos pasos
