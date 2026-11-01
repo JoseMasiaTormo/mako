@@ -60,21 +60,11 @@ El proyecto es un **monorepo** con dos piezas:
 
 ## 📸 Capturas
 
-<!-- IMAGEN: fila 1 (pantalla del día, análisis con IA, desglose)
 <p align="center">
-  <img src="docs/img/dia.png" alt="Pantalla del día" width="240" />
-  <img src="docs/img/analizar.png" alt="Añadir comida con IA" width="240" />
-  <img src="docs/img/desglose.png" alt="Desglose de ingredientes" width="240" />
-</p>
--->
-
-<!-- IMAGEN: fila 2 (escáner, foto de etiqueta, objetivos)
-<p align="center">
-  <img src="docs/img/escaner.png" alt="Escáner de código de barras" width="240" />
-  <img src="docs/img/etiqueta.png" alt="Producto rellenado desde la foto de la etiqueta" width="240" />
+  <img src="docs/img/dia.png" alt="Pantalla del día con calorías y macros" width="240" />
   <img src="docs/img/objetivos.png" alt="Objetivos diarios" width="240" />
+  <img src="docs/img/escaner.png" alt="Escáner de código de barras" width="240" />
 </p>
--->
 
 ---
 
