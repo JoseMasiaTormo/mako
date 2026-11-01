@@ -16,7 +16,8 @@
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"]
+      "permissions": ["android.permission.CAMERA"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -26,7 +27,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Macros IA usa la cámara para escanear códigos de barras y leer etiquetas nutricionales."
+          "cameraPermission": "Mako usa la cámara para escanear códigos de barras y leer etiquetas nutricionales.",
+          "recordAudioAndroid": false
         }
       ]
     ],
