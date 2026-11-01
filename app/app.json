@@ -13,9 +13,10 @@
       "package": "es.josemasia.mako",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/adaptative-icon.png"
+        "foregroundImage": "./assets/adaptive-icon.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -28,6 +29,11 @@
           "cameraPermission": "Macros IA usa la cámara para escanear códigos de barras y leer etiquetas nutricionales."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "328b40b5-9fb9-4d2d-9ba8-4d1f72b909f5"
+      }
+    }
   }
 }
