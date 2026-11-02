@@ -62,6 +62,7 @@ El proyecto es un **monorepo** con dos piezas:
 
 <p align="center">
   <img src="docs/img/dia.png" alt="Pantalla del día con calorías y macros" width="240" />
+  <img src="docs/img/nuevo.png" alt="Añadir comida con IA desglosada por ingredientes" width="240" />
   <img src="docs/img/objetivos.png" alt="Objetivos diarios" width="240" />
   <img src="docs/img/escaner.png" alt="Escáner de código de barras" width="240" />
 </p>
