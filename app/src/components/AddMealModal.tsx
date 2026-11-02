@@ -3,11 +3,8 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,7 +12,7 @@ import {
 } from "react-native";
 import { getMiProductoPorCodigo, NewMeal, NuevoMiProducto, saveMiProducto } from "../db";
 import { AiItem, analizarComida, ApiError, EtiquetaLeida, leerEtiqueta } from "../api";
-import { colors } from "../theme";
+import { Colors, useTheme, useThemedStyles } from "../theme";
 import { useSQLiteContext } from "expo-sqlite";
 import { enriquecerItems, itemDeEtiqueta } from "../products";
 import BarcodeScanner from "./BarcodeScanner";
@@ -23,6 +20,7 @@ import LabelCamera from "./LabelCamera";
 import { buscarPorCodigo } from "../openfoodfacts";
 import { getDeviceId } from "../device";
 import { prepararFoto } from "../image";
+import FloatingCard from "./FloatingCard";
 
 type Props = {
   visible: boolean;
@@ -94,6 +92,8 @@ function Field({
   placeholder?: string;
   numeric?: boolean;
 }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -110,6 +110,8 @@ function Field({
 }
 
 export default function AddMealModal({ visible, onClose, onSave }: Props) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const [mode, setMode] = useState<Mode>("ia");
   const [texto, setTexto] = useState("");
   const [items, setItems] = useState<EditableItem[]>([]);
@@ -483,145 +485,133 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onRequestClose}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onRequestClose}>
       {scanning ? (
         <BarcodeScanner onScanned={handleScanned} onClose={() => setScanning(false)} />
       ) : capturingLabel ? (
         <LabelCamera onCaptured={handleLabelPhoto} onClose={() => setCapturingLabel(false)} />
       ) : (
-        <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-          <View style={styles.sheet}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              {product ? (
-                <>
-                  <Text style={styles.title}>Añadir producto</Text>
-                  {renderProducto(product)}
-                </>
-              ) : (
-                <>
-                  <Text style={styles.title}>Añadir comida</Text>
+        <FloatingCard>
+          {product ? (
+            <>
+              <Text style={styles.title}>Añadir producto</Text>
+              {renderProducto(product)}
+            </>
+          ) : (
+            <>
+              <Text style={styles.title}>Añadir comida</Text>
 
-                  <View style={styles.tabs}>
-                    <Pressable
-                      style={[styles.tab, mode === "ia" && styles.tabActive]}
-                      onPress={() => setMode("ia")}
-                      disabled={loading}
-                    >
-                      <Text style={[styles.tabText, mode === "ia" && styles.tabTextActive]}>Con IA</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.tab, mode === "manual" && styles.tabActive]}
-                      onPress={() => setMode("manual")}
-                      disabled={loading}
-                    >
-                      <Text style={[styles.tabText, mode === "manual" && styles.tabTextActive]}>Manual</Text>
-                    </Pressable>
-                  </View>
+              <View style={styles.tabs}>
+                <Pressable
+                  style={[styles.tab, mode === "ia" && styles.tabActive]}
+                  onPress={() => setMode("ia")}
+                  disabled={loading}
+                >
+                  <Text style={[styles.tabText, mode === "ia" && styles.tabTextActive]}>Con IA</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.tab, mode === "manual" && styles.tabActive]}
+                  onPress={() => setMode("manual")}
+                  disabled={loading}
+                >
+                  <Text style={[styles.tabText, mode === "manual" && styles.tabTextActive]}>Manual</Text>
+                </Pressable>
+              </View>
 
-                  {mode === "ia" ? renderIa() : renderManual()}
-                </>
-              )}
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
+              {mode === "ia" ? renderIa() : renderManual()}
+            </>
+          )}
+        </FloatingCard>
       )}
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" },
-  sheet: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 32,
-    maxHeight: "90%",
-  },
-  itemMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
-  badge: {
-    fontSize: 10,
-    fontWeight: "700",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    overflow: "hidden",
-  },
-  badgeEtiqueta: { backgroundColor: "#DCFCE7", color: colors.primary },
-  badgeIa: { backgroundColor: colors.bg, color: colors.muted },
-  title: { fontSize: 20, fontWeight: "700", color: colors.text, marginBottom: 12 },
-  tabs: {
-    flexDirection: "row",
-    backgroundColor: colors.bg,
-    borderRadius: 10,
-    padding: 4,
-    marginBottom: 16,
-  },
-  tab: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" },
-  tabActive: { backgroundColor: colors.card },
-  tabText: { color: colors.muted, fontWeight: "600" },
-  tabTextActive: { color: colors.text },
-  row: { flexDirection: "row", gap: 10 },
-  field: { flex: 1, marginBottom: 12 },
-  label: { fontSize: 13, color: colors.muted, marginBottom: 4 },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: colors.text,
-  },
-  textarea: { minHeight: 90, textAlignVertical: "top" },
-  hint: { fontSize: 12, color: colors.muted, marginTop: 6 },
-  query: { fontSize: 15, fontStyle: "italic", color: colors.muted, marginBottom: 12 },
-  itemRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    gap: 6,
-  },
-  itemInfo: { flex: 1 },
-  itemName: { fontSize: 15, color: colors.text, fontWeight: "500" },
-  itemMacros: { fontSize: 12, color: colors.muted, marginTop: 2 },
-  gramsInput: {
-    width: 60,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    textAlign: "right",
-    fontSize: 15,
-    color: colors.text,
-  },
-  gramsUnit: { fontSize: 13, color: colors.muted },
-  itemKcal: { width: 44, textAlign: "right", fontSize: 15, fontWeight: "600", color: colors.text },
-  remove: { fontSize: 16, color: colors.danger, paddingLeft: 6 },
-  totalRow: { paddingVertical: 12 },
-  totalLabel: { fontSize: 13, color: colors.muted },
-  totalValue: { fontSize: 16, fontWeight: "700", color: colors.text, marginTop: 2 },
-  buttons: { flexDirection: "row", gap: 10, marginTop: 12 },
-  button: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  cancel: { backgroundColor: colors.bg },
-  save: { backgroundColor: colors.primary },
-  disabled: { opacity: 0.5 },
-  cancelText: { color: colors.text, fontWeight: "600", fontSize: 16 },
-  saveText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  scanButton: {
-    marginTop: 12,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    alignItems: "center",
-  },
-  scanText: { color: colors.primary, fontWeight: "600", fontSize: 15 },
-  photoButton: { marginTop: 4, marginBottom: 16 },
-  readingRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.text, marginBottom: 8 },
-});
+const makeStyles = (colors: Colors) =>
+  StyleSheet.create({
+    itemMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
+    badge: {
+      fontSize: 10,
+      fontWeight: "700",
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+      overflow: "hidden",
+    },
+    badgeEtiqueta: { backgroundColor: colors.primarySoft, color: colors.primary },
+    badgeIa: { backgroundColor: colors.bg, color: colors.muted },
+    title: { fontSize: 20, fontWeight: "700", color: colors.text, marginBottom: 12 },
+    tabs: {
+      flexDirection: "row",
+      backgroundColor: colors.bg,
+      borderRadius: 10,
+      padding: 4,
+      marginBottom: 16,
+    },
+    tab: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" },
+    tabActive: { backgroundColor: colors.card },
+    tabText: { color: colors.muted, fontWeight: "600" },
+    tabTextActive: { color: colors.text },
+    row: { flexDirection: "row", gap: 10 },
+    field: { flex: 1, marginBottom: 12 },
+    label: { fontSize: 13, color: colors.muted, marginBottom: 4 },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 16,
+      color: colors.text,
+    },
+    textarea: { minHeight: 90, textAlignVertical: "top" },
+    hint: { fontSize: 12, color: colors.muted, marginTop: 6 },
+    query: { fontSize: 15, fontStyle: "italic", color: colors.muted, marginBottom: 12 },
+    itemRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      gap: 6,
+    },
+    itemInfo: { flex: 1 },
+    itemName: { fontSize: 15, color: colors.text, fontWeight: "500" },
+    itemMacros: { fontSize: 12, color: colors.muted, marginTop: 2 },
+    gramsInput: {
+      width: 60,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingVertical: 4,
+      paddingHorizontal: 6,
+      textAlign: "right",
+      fontSize: 15,
+      color: colors.text,
+    },
+    gramsUnit: { fontSize: 13, color: colors.muted },
+    itemKcal: { width: 44, textAlign: "right", fontSize: 15, fontWeight: "600", color: colors.text },
+    remove: { fontSize: 16, color: colors.danger, paddingLeft: 6 },
+    totalRow: { paddingVertical: 12 },
+    totalLabel: { fontSize: 13, color: colors.muted },
+    totalValue: { fontSize: 16, fontWeight: "700", color: colors.text, marginTop: 2 },
+    buttons: { flexDirection: "row", gap: 10, marginTop: 12 },
+    button: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+    cancel: { backgroundColor: colors.bg },
+    save: { backgroundColor: colors.primary },
+    disabled: { opacity: 0.5 },
+    cancelText: { color: colors.text, fontWeight: "600", fontSize: 16 },
+    saveText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+    scanButton: {
+      marginTop: 12,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      alignItems: "center",
+    },
+    scanText: { color: colors.primary, fontWeight: "600", fontSize: 15 },
+    photoButton: { marginTop: 4, marginBottom: 16 },
+    readingRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.text, marginBottom: 8 },
+  });

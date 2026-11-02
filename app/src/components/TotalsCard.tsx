@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Goals, Totals } from "../db";
-import { colors } from "../theme";
+import { Colors, useTheme, useThemedStyles } from "../theme";
 
 type Props = {
   totals: Totals;
@@ -19,6 +19,8 @@ function ProgressBar({
   color: string;
   height?: number;
 }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const pct = max > 0 ? Math.min(value / max, 1) * 100 : 0;
   const over = max > 0 && value > max;
   return (
@@ -29,6 +31,7 @@ function ProgressBar({
 }
 
 function Macro({ label, value, goal, color }: { label: string; value: number; goal?: number; color: string }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.macro}>
       <Text style={[styles.macroValue, { color }]}>
@@ -46,6 +49,8 @@ function Macro({ label, value, goal, color }: { label: string; value: number; go
 }
 
 export default function TotalsCard({ totals, goals, onSetGoals }: Props) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const restante = goals ? Math.round(goals.kcal - totals.kcal) : 0;
 
   return (
@@ -80,30 +85,31 @@ export default function TotalsCard({ totals, goals, onSetGoals }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.card,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 16,
-    borderRadius: 16,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  kcal: { fontSize: 40, fontWeight: "700", color: colors.text },
-  kcalGoal: { fontSize: 20, fontWeight: "500", color: colors.muted },
-  kcalLabel: { fontSize: 14, color: colors.muted, marginBottom: 10 },
-  kcalBar: { alignSelf: "stretch", marginBottom: 6 },
-  remaining: { fontSize: 14, color: colors.muted, marginBottom: 14 },
-  over: { color: colors.danger, fontWeight: "600" },
-  setGoals: { fontSize: 14, color: colors.primary, fontWeight: "600", marginBottom: 14 },
-  row: { flexDirection: "row", alignSelf: "stretch", gap: 12 },
-  macro: { flex: 1, alignItems: "center" },
-  macroValue: { fontSize: 17, fontWeight: "600" },
-  macroGoal: { fontSize: 13, fontWeight: "500", color: colors.muted },
-  macroLabel: { fontSize: 12, color: colors.muted },
-  macroBar: { alignSelf: "stretch", marginTop: 6 },
-  track: { backgroundColor: colors.bg, borderRadius: 999, overflow: "hidden" },
-  fill: { height: "100%", borderRadius: 999 },
-});
+const makeStyles = (colors: Colors) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: colors.card,
+      marginHorizontal: 16,
+      marginBottom: 12,
+      padding: 16,
+      borderRadius: 16,
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    kcal: { fontSize: 40, fontWeight: "700", color: colors.text },
+    kcalGoal: { fontSize: 20, fontWeight: "500", color: colors.muted },
+    kcalLabel: { fontSize: 14, color: colors.muted, marginBottom: 10 },
+    kcalBar: { alignSelf: "stretch", marginBottom: 6 },
+    remaining: { fontSize: 14, color: colors.muted, marginBottom: 14 },
+    over: { color: colors.danger, fontWeight: "600" },
+    setGoals: { fontSize: 14, color: colors.primary, fontWeight: "600", marginBottom: 14 },
+    row: { flexDirection: "row", alignSelf: "stretch", gap: 12 },
+    macro: { flex: 1, alignItems: "center" },
+    macroValue: { fontSize: 17, fontWeight: "600" },
+    macroGoal: { fontSize: 13, fontWeight: "500", color: colors.muted },
+    macroLabel: { fontSize: 12, color: colors.muted },
+    macroBar: { alignSelf: "stretch", marginTop: 6 },
+    track: { backgroundColor: colors.bg, borderRadius: 999, overflow: "hidden" },
+    fill: { height: "100%", borderRadius: 999 },
+  });

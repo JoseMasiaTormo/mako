@@ -1,18 +1,16 @@
 import { useEffect, useState } from "react";
 import {
   Alert,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { Goals } from "../db";
-import { colors } from "../theme";
+import { Colors, useTheme, useThemedStyles } from "../theme";
+import FloatingCard from "./FloatingCard";
 
 type Props = {
   visible: boolean;
@@ -21,7 +19,7 @@ type Props = {
   onSave: (goals: Goals) => void;
 };
 
-const empty = { kcal: "", protein: "", carbs: "", fat: "" };
+const empty = { kcal: "", protein: "", carbs: "", fat: "", water: "" };
 type FormKey = keyof typeof empty;
 
 function num(v: string) {
@@ -30,6 +28,8 @@ function num(v: string) {
 }
 
 function Field({ label, value, onChangeText }: { label: string; value: string; onChangeText: (v: string) => void }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -45,6 +45,7 @@ function Field({ label, value, onChangeText }: { label: string; value: string; o
 }
 
 export default function GoalsModal({ visible, initial, onClose, onSave }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const [form, setForm] = useState(empty);
 
   useEffect(() => {
@@ -56,6 +57,7 @@ export default function GoalsModal({ visible, initial, onClose, onSave }: Props)
             protein: String(initial.protein),
             carbs: String(initial.carbs),
             fat: String(initial.fat),
+            water: initial.water ? String(initial.water) : "",
           }
         : empty,
     );
@@ -76,86 +78,80 @@ export default function GoalsModal({ visible, initial, onClose, onSave }: Props)
       protein: num(form.protein),
       carbs: num(form.carbs),
       fat: num(form.fat),
+      water: Math.round(num(form.water)),
     });
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={styles.sheet}>
-          <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={styles.title}>Objetivos diarios</Text>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <FloatingCard>
+        <Text style={styles.title}>Objetivos diarios</Text>
 
-            <Field label="Kcal" value={form.kcal} onChangeText={set("kcal")} />
-            <View style={styles.row}>
-              <Field label="Proteína (g)" value={form.protein} onChangeText={set("protein")} />
-              <Field label="Carbos (g)" value={form.carbs} onChangeText={set("carbs")} />
-              <Field label="Grasa (g)" value={form.fat} onChangeText={set("fat")} />
-            </View>
-
-            {kcalMacros > 0 && (
-              <View style={styles.calc}>
-                <Text style={styles.calcText}>Tus macros suman {kcalMacros} kcal</Text>
-                {String(kcalMacros) !== form.kcal && (
-                  <Pressable onPress={() => set("kcal")(String(kcalMacros))} hitSlop={8}>
-                    <Text style={styles.calcButton}>Usar</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
-
-            <View style={styles.buttons}>
-              <Pressable style={[styles.button, styles.cancel]} onPress={onClose}>
-                <Text style={styles.cancelText}>Cancelar</Text>
-              </Pressable>
-              <Pressable style={[styles.button, styles.save]} onPress={save}>
-                <Text style={styles.saveText}>Guardar</Text>
-              </Pressable>
-            </View>
-          </ScrollView>
+        <Field label="Kcal" value={form.kcal} onChangeText={set("kcal")} />
+        <View style={styles.row}>
+          <Field label="Proteína (g)" value={form.protein} onChangeText={set("protein")} />
+          <Field label="Carbos (g)" value={form.carbs} onChangeText={set("carbs")} />
+          <Field label="Grasa (g)" value={form.fat} onChangeText={set("fat")} />
         </View>
-      </KeyboardAvoidingView>
+
+        {kcalMacros > 0 && (
+          <View style={styles.calc}>
+            <Text style={styles.calcText}>Tus macros suman {kcalMacros} kcal</Text>
+            {String(kcalMacros) !== form.kcal && (
+              <Pressable onPress={() => set("kcal")(String(kcalMacros))} hitSlop={8}>
+                <Text style={styles.calcButton}>Usar</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        <View style={styles.waterField}>
+          <Field label="Agua (ml)" value={form.water} onChangeText={set("water")} />
+        </View>
+
+        <View style={styles.buttons}>
+          <Pressable style={[styles.button, styles.cancel]} onPress={onClose}>
+            <Text style={styles.cancelText}>Cancelar</Text>
+          </Pressable>
+          <Pressable style={[styles.button, styles.save]} onPress={save}>
+            <Text style={styles.saveText}>Guardar</Text>
+          </Pressable>
+        </View>
+      </FloatingCard>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" },
-  sheet: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 32,
-    maxHeight: "85%",
-  },
-  title: { fontSize: 20, fontWeight: "700", color: colors.text, marginBottom: 16 },
-  row: { flexDirection: "row", gap: 10 },
-  field: { flex: 1, marginBottom: 12 },
-  label: { fontSize: 13, color: colors.muted, marginBottom: 4 },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: colors.text,
-  },
-  calc: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.bg,
-    padding: 12,
-    borderRadius: 10,
-  },
-  calcText: { color: colors.muted, fontSize: 14 },
-  calcButton: { color: colors.primary, fontWeight: "700", fontSize: 14 },
-  buttons: { flexDirection: "row", gap: 10, marginTop: 16 },
-  button: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
-  cancel: { backgroundColor: colors.bg },
-  save: { backgroundColor: colors.primary },
-  cancelText: { color: colors.text, fontWeight: "600", fontSize: 16 },
-  saveText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-});
+const makeStyles = (colors: Colors) =>
+  StyleSheet.create({
+    title: { fontSize: 20, fontWeight: "700", color: colors.text, marginBottom: 16 },
+    row: { flexDirection: "row", gap: 10 },
+    field: { flex: 1, marginBottom: 12 },
+    label: { fontSize: 13, color: colors.muted, marginBottom: 4 },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 16,
+      color: colors.text,
+    },
+    calc: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      backgroundColor: colors.bg,
+      padding: 12,
+      borderRadius: 10,
+    },
+    calcText: { color: colors.muted, fontSize: 14 },
+    calcButton: { color: colors.primary, fontWeight: "700", fontSize: 14 },
+    waterField: { marginTop: 12 },
+    buttons: { flexDirection: "row", gap: 10, marginTop: 16 },
+    button: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
+    cancel: { backgroundColor: colors.bg },
+    save: { backgroundColor: colors.primary },
+    cancelText: { color: colors.text, fontWeight: "600", fontSize: 16 },
+    saveText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+  });

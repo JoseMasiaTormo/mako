@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Meal } from "../db";
-import { colors } from "../theme";
+import { Colors, useThemedStyles } from "../theme";
 
 type Props = {
   meal: Meal;
@@ -8,6 +8,7 @@ type Props = {
 };
 
 export default function MealItem({ meal, onLongPress }: Props) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable onLongPress={onLongPress} style={({ pressed }) => [styles.item, pressed && styles.pressed]}>
       <View style={styles.left}>
@@ -24,20 +25,21 @@ export default function MealItem({ meal, onLongPress }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  item: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.card,
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  pressed: { opacity: 0.6 },
-  left: { flex: 1, marginRight: 12 },
-  name: { fontSize: 16, fontWeight: "500", color: colors.text },
-  macros: { fontSize: 13, color: colors.muted, marginTop: 2 },
-  kcal: { fontSize: 15, fontWeight: "600", color: colors.text },
-});
+const makeStyles = (colors: Colors) =>
+  StyleSheet.create({
+    item: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.card,
+      padding: 14,
+      borderRadius: 12,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    pressed: { opacity: 0.6 },
+    left: { flex: 1, marginRight: 12 },
+    name: { fontSize: 16, fontWeight: "500", color: colors.text },
+    macros: { fontSize: 13, color: colors.muted, marginTop: 2 },
+    kcal: { fontSize: 15, fontWeight: "600", color: colors.text },
+  });

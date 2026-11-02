@@ -4,14 +4,20 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useSQLiteContext } from "expo-sqlite";
 import {
   addMeal,
+  addWater,
+  DEFAULT_GLASS_ML,
   deleteMeal,
+  getGlassMl,
   getGoals,
   getMealsByDate,
+  getWaterByDate,
   getSettings,
   Goals,
   Meal,
   NewMeal,
+  removeLastWater,
   saveGoals,
+  setGlassMl,
   setSettings,
   sumTotals,
 } from "../db";
@@ -20,19 +26,26 @@ import TotalsCard from "../components/TotalsCard";
 import MealItem from "../components/MealItem";
 import AddMealModal from "../components/AddMealModal";
 import GoalsModal from "../components/GoalsModal";
-import { colors } from "../theme";
+import Logo from "../components/Logo";
+import WaterCard from "../components/WaterCard";
+import { Colors, useTheme, useThemedStyles } from "../theme";
 
 export default function DayScreen() {
+  const styles = useThemedStyles(makeStyles);
+  const { mode, toggleTheme } = useTheme();
   const db = useSQLiteContext();
   const [date, setDate] = useState(todayKey());
   const [meals, setMeals] = useState<Meal[]>([]);
+  const [water, setWater] = useState(0);
+  const [glassMl, setGlassMlState] = useState(DEFAULT_GLASS_ML);
   const [goals, setGoals] = useState<Goals | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [goalsVisible, setGoalsVisible] = useState(false);
 
   const load = useCallback(async () => {
-    const rows = await getMealsByDate(db, date);
+    const [rows, ml] = await Promise.all([getMealsByDate(db, date), getWaterByDate(db, date)]);
     setMeals(rows);
+    setWater(ml);
   }, [db, date]);
 
   useEffect(() => {
@@ -41,6 +54,7 @@ export default function DayScreen() {
 
   useEffect(() => {
     getGoals(db).then(setGoals);
+    getGlassMl(db).then(setGlassMlState);
   }, [db]);
 
   useEffect(() => {
@@ -61,6 +75,22 @@ export default function DayScreen() {
     await addMeal(db, { ...meal, date });
     setModalVisible(false);
     load();
+  };
+
+  const handleAddWater = async () => {
+    setWater((w) => w + glassMl); // respuesta inmediata
+    await addWater(db, date, glassMl);
+    load();
+  };
+
+  const handleRemoveWater = async () => {
+    await removeLastWater(db, date);
+    load();
+  };
+
+  const handleChangeGlass = (ml: number) => {
+    setGlassMlState(ml);
+    setGlassMl(db, ml);
   };
 
   const handleSaveGoals = async (g: Goals) => {
@@ -89,10 +119,20 @@ export default function DayScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <View style={styles.topBar}>
-        <Text style={styles.appTitle}>Mako</Text>
-        <Pressable onPress={() => setGoalsVisible(true)} hitSlop={12}>
-          <Text style={styles.gear}>⚙︎</Text>
-        </Pressable>
+        <Logo height={24} />
+        <View style={styles.actions}>
+          <Pressable
+            onPress={toggleTheme}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={mode === "dark" ? "Activar modo claro" : "Activar modo oscuro"}
+          >
+            <Text style={styles.gear}>{mode === "dark" ? "☀︎" : "☾"}</Text>
+          </Pressable>
+          <Pressable onPress={() => setGoalsVisible(true)} hitSlop={12}>
+            <Text style={styles.gear}>⚙︎</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.header}>
@@ -106,6 +146,15 @@ export default function DayScreen() {
           <Text style={styles.arrow}>›</Text>
         </Pressable>
       </View>
+
+      <WaterCard
+        ml={water}
+        goal={goals?.water ?? 0}
+        glassMl={glassMl}
+        onAdd={handleAddWater}
+        onRemoveLast={handleRemoveWater}
+        onChangeGlass={handleChangeGlass}
+      />
 
       <TotalsCard totals={totals} goals={goals} onSetGoals={() => setGoalsVisible(true)} />
 
@@ -133,43 +182,44 @@ export default function DayScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingTop: 8,
-  },
-  appTitle: { fontSize: 22, fontWeight: "800", color: colors.text },
-  gear: { fontSize: 24, color: colors.text },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  arrow: { fontSize: 32, color: colors.text, paddingHorizontal: 8 },
-  dateLabel: { fontSize: 18, fontWeight: "600", color: colors.text, textTransform: "capitalize" },
-  list: { paddingHorizontal: 16, paddingBottom: 100 },
-  empty: { textAlign: "center", color: colors.muted, marginTop: 40, fontSize: 15 },
-  fab: {
-    position: "absolute",
-    right: 24,
-    bottom: 32,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-  },
-  fabText: { color: "#fff", fontSize: 32, lineHeight: 34 },
-});
+const makeStyles = (colors: Colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.bg },
+    topBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 24,
+      paddingTop: 8,
+    },
+    actions: { flexDirection: "row", alignItems: "center", gap: 20 },
+    gear: { fontSize: 24, color: colors.text },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+    },
+    arrow: { fontSize: 32, color: colors.text, paddingHorizontal: 8 },
+    dateLabel: { fontSize: 18, fontWeight: "600", color: colors.text, textTransform: "capitalize" },
+    list: { paddingHorizontal: 16, paddingBottom: 100 },
+    empty: { textAlign: "center", color: colors.muted, marginTop: 40, fontSize: 15 },
+    fab: {
+      position: "absolute",
+      right: 24,
+      bottom: 32,
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+      elevation: 4,
+      shadowColor: "#000",
+      shadowOpacity: 0.2,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 3 },
+    },
+    fabText: { color: "#fff", fontSize: 32, lineHeight: 34 },
+  });

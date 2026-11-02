@@ -22,7 +22,7 @@ export type Totals = {
   fat: number;
 };
 
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
@@ -96,6 +96,20 @@ export async function migrate(db: SQLiteDatabase) {
       );
     `);
     version = 5;
+  }
+
+  if (version === 5) {
+    // Agua bebida: una fila por cada vaso (o cantidad) que se apunta.
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS water (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        ml REAL NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_water_date ON water(date);
+    `);
+    version = 6;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
@@ -229,13 +243,17 @@ export function deleteMiProducto(db: SQLiteDatabase, id: number) {
   return db.runAsync("DELETE FROM mis_productos WHERE id = ?", id);
 }
 
-export type Goals = Totals;
+export type Goals = Totals & {
+  /** Objetivo de agua en ml (0 = sin objetivo). */
+  water: number;
+};
 
 const GOAL_KEYS = {
   kcal: "obj_kcal",
   protein: "obj_proteina",
   carbs: "obj_carbos",
   fat: "obj_grasa",
+  water: "obj_agua",
 } as const;
 
 export async function getGoals(db: SQLiteDatabase): Promise<Goals | null> {
@@ -252,6 +270,7 @@ export async function getGoals(db: SQLiteDatabase): Promise<Goals | null> {
     protein: map[GOAL_KEYS.protein] || 0,
     carbs: map[GOAL_KEYS.carbs] || 0,
     fat: map[GOAL_KEYS.fat] || 0,
+    water: map[GOAL_KEYS.water] || 0,
   };
 }
 
@@ -261,4 +280,38 @@ export async function saveGoals(db: SQLiteDatabase, goals: Goals) {
       await setSettings(db, key, String(goals[field as keyof Goals]));
     }
   });
+}
+
+/** Total de agua (ml) bebida en un día. */
+export async function getWaterByDate(db: SQLiteDatabase, date: string) {
+  const row = await db.getFirstAsync<{ total: number | null }>(
+    "SELECT SUM(ml) AS total FROM water WHERE date = ?",
+    date,
+  );
+  return row?.total ?? 0;
+}
+
+export function addWater(db: SQLiteDatabase, date: string, ml: number) {
+  return db.runAsync("INSERT INTO water (date, ml) VALUES (?, ?)", date, ml);
+}
+
+/** Borra la última cantidad de agua apuntada en el día (para deshacer un vaso). */
+export function removeLastWater(db: SQLiteDatabase, date: string) {
+  return db.runAsync(
+    "DELETE FROM water WHERE id = (SELECT id FROM water WHERE date = ? ORDER BY created_at DESC, id DESC LIMIT 1)",
+    date,
+  );
+}
+
+const GLASS_KEY = "vaso_ml";
+export const DEFAULT_GLASS_ML = 250;
+
+/** Cantidad (ml) que suma cada pulsación del "+" en la tarjeta de agua. */
+export async function getGlassMl(db: SQLiteDatabase) {
+  const v = Number(await getSettings(db, GLASS_KEY));
+  return v > 0 ? v : DEFAULT_GLASS_ML;
+}
+
+export function setGlassMl(db: SQLiteDatabase, ml: number) {
+  return setSettings(db, GLASS_KEY, String(ml));
 }
