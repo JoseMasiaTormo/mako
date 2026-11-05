@@ -4,13 +4,14 @@ import { Colors, useThemedStyles } from "../theme";
 
 type Props = {
   meal: Meal;
+  onPress?: () => void;
   onLongPress: () => void;
 };
 
-export default function MealItem({ meal, onLongPress }: Props) {
+export default function MealItem({ meal, onPress, onLongPress }: Props) {
   const styles = useThemedStyles(makeStyles);
   return (
-    <Pressable onLongPress={onLongPress} style={({ pressed }) => [styles.item, pressed && styles.pressed]}>
+    <Pressable onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.item, pressed && styles.pressed]}>
       <View style={styles.left}>
         <Text style={styles.name} numberOfLines={2}>
           {meal.name}

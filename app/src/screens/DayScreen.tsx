@@ -20,12 +20,15 @@ import {
   setGlassMl,
   setSettings,
   sumTotals,
+  updateMealGrams,
 } from "../db";
 import { addDays, labelFor, todayKey } from "../utils/date";
+import { getRemindersEnabled, initReminders, setRemindersEnabled, syncReminders } from "../reminders";
 import TotalsCard from "../components/TotalsCard";
 import MealItem from "../components/MealItem";
 import AddMealModal from "../components/AddMealModal";
 import GoalsModal from "../components/GoalsModal";
+import EditGramsModal from "../components/EditGramsModal";
 import Logo from "../components/Logo";
 import WaterCard from "../components/WaterCard";
 import { Colors, useTheme, useThemedStyles } from "../theme";
@@ -41,6 +44,8 @@ export default function DayScreen() {
   const [goals, setGoals] = useState<Goals | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [goalsVisible, setGoalsVisible] = useState(false);
+  const [editing, setEditing] = useState<Meal | null>(null);
+  const [reminders, setReminders] = useState(false);
 
   const load = useCallback(async () => {
     const [rows, ml] = await Promise.all([getMealsByDate(db, date), getWaterByDate(db, date)]);
@@ -59,14 +64,32 @@ export default function DayScreen() {
 
   useEffect(() => {
     (async () => {
+      // Pide permiso de notificaciones (solo la primera vez) y reprograma los recordatorios.
+      const reminders = () =>
+        initReminders(db)
+          .then(() => getRemindersEnabled(db))
+          .then(setReminders)
+          .catch(() => {});
+
       const seen = await getSettings(db, "aviso_visto");
       if (!seen) {
+        // Primero el aviso y luego el permiso, para no encadenar dos diálogos a la vez.
         Alert.alert(
           "Antes de empezar",
           "Las calorías y macros que calcula la IA son estimaciones aproximadas. Úsalas como orientación, no como un valor exacto.",
-          [{ text: "Entendido", onPress: () => setSettings(db, "aviso_visto", "1") }],
+          [
+            {
+              text: "Entendido",
+              onPress: async () => {
+                await setSettings(db, "aviso_visto", "1");
+                reminders();
+              },
+            },
+          ],
           { cancelable: false },
         );
+      } else {
+        reminders();
       }
     })();
   }, [db]);
@@ -81,11 +104,13 @@ export default function DayScreen() {
     setWater((w) => w + glassMl); // respuesta inmediata
     await addWater(db, date, glassMl);
     load();
+    if (date === todayKey()) syncReminders(db).catch(() => {});
   };
 
   const handleRemoveWater = async () => {
     await removeLastWater(db, date);
     load();
+    if (date === todayKey()) syncReminders(db).catch(() => {});
   };
 
   const handleChangeGlass = (ml: number) => {
@@ -97,6 +122,25 @@ export default function DayScreen() {
     await saveGoals(db, g);
     setGoals(g);
     setGoalsVisible(false);
+    syncReminders(db).catch(() => {});
+  };
+
+  const handleEditGrams = async (meal: Meal, grams: number) => {
+    await updateMealGrams(db, meal, grams);
+    setEditing(null);
+    load();
+  };
+
+  const handleToggleReminders = async (on: boolean) => {
+    setReminders(on);
+    const ok = await setRemindersEnabled(db, on).catch(() => false);
+    setReminders(ok);
+    if (on && !ok) {
+      Alert.alert(
+        "Notificaciones desactivadas",
+        "Para recibir los recordatorios, permite las notificaciones de Mako en los ajustes del móvil.",
+      );
+    }
   };
 
   const handleDelete = (meal: Meal) => {
@@ -161,7 +205,13 @@ export default function DayScreen() {
       <FlatList
         data={meals}
         keyExtractor={(m) => String(m.id)}
-        renderItem={({ item }) => <MealItem meal={item} onLongPress={() => handleDelete(item)} />}
+        renderItem={({ item }) => (
+          <MealItem
+            meal={item}
+            onPress={item.grams ? () => setEditing(item) : undefined}
+            onLongPress={() => handleDelete(item)}
+          />
+        )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={<Text style={styles.empty}>Sin comidas este día</Text>}
       />
@@ -172,9 +222,13 @@ export default function DayScreen() {
 
       <AddMealModal visible={modalVisible} onClose={() => setModalVisible(false)} onSave={handleAdd} />
 
+      <EditGramsModal key={editing?.id ?? "cerrado"} meal={editing} onClose={() => setEditing(null)} onSave={handleEditGrams} />
+
       <GoalsModal
         visible={goalsVisible}
         initial={goals}
+        reminders={reminders}
+        onToggleReminders={handleToggleReminders}
         onClose={() => setGoalsVisible(false)}
         onSave={handleSaveGoals}
       />

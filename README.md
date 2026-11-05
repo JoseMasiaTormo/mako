@@ -122,6 +122,7 @@ El proyecto es un **monorepo** con dos piezas:
 - Ajusta los **gramos** de cada ingrediente y los macros se recalculan al momento.
 - Elimina ingredientes que la IA haya añadido de más.
 - Modo **manual** para meter los valores a mano.
+- Toca una comida para **cambiar los gramos** (las kcal y los macros se recalculan solos).
 - Mantén pulsada una comida para **borrarla**.
 
 </td>

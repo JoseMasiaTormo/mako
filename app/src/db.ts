@@ -133,6 +133,20 @@ export async function addMeal(db: SQLiteDatabase, meal: NewMeal) {
   return result.lastInsertRowId;
 }
 
+/** Cambia los gramos de una comida y reescala kcal y macros en proporción. */
+export function updateMealGrams(db: SQLiteDatabase, meal: Meal, grams: number) {
+  const f = meal.grams && meal.grams > 0 ? grams / meal.grams : 1;
+  return db.runAsync(
+    "UPDATE meals SET grams = ?, kcal = ?, protein = ?, carbs = ?, fat = ? WHERE id = ?",
+    grams,
+    meal.kcal * f,
+    meal.protein * f,
+    meal.carbs * f,
+    meal.fat * f,
+    meal.id,
+  );
+}
+
 export function deleteMeal(db: SQLiteDatabase, id: number) {
   return db.runAsync("DELETE FROM meals WHERE id = ?", id);
 }

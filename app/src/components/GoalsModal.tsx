@@ -4,6 +4,7 @@ import {
   Modal,
   Pressable,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -17,6 +18,8 @@ type Props = {
   initial: Goals | null;
   onClose: () => void;
   onSave: (goals: Goals) => void;
+  reminders: boolean;
+  onToggleReminders: (on: boolean) => void;
 };
 
 const empty = { kcal: "", protein: "", carbs: "", fat: "", water: "" };
@@ -44,8 +47,9 @@ function Field({ label, value, onChangeText }: { label: string; value: string; o
   );
 }
 
-export default function GoalsModal({ visible, initial, onClose, onSave }: Props) {
+export default function GoalsModal({ visible, initial, onClose, onSave, reminders, onToggleReminders }: Props) {
   const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const [form, setForm] = useState(empty);
 
   useEffect(() => {
@@ -109,6 +113,19 @@ export default function GoalsModal({ visible, initial, onClose, onSave }: Props)
           <Field label="Agua (ml)" value={form.water} onChangeText={set("water")} />
         </View>
 
+        <View style={styles.reminder}>
+          <View style={styles.reminderText}>
+            <Text style={styles.reminderTitle}>Recordarme beber agua</Text>
+            <Text style={styles.reminderHint}>Cada 2,5 h de 10:00 a 22:00. Para si llegas al objetivo.</Text>
+          </View>
+          <Switch
+            value={reminders}
+            onValueChange={onToggleReminders}
+            trackColor={{ true: colors.primary, false: colors.border }}
+            thumbColor="#fff"
+          />
+        </View>
+
         <View style={styles.buttons}>
           <Pressable style={[styles.button, styles.cancel]} onPress={onClose}>
             <Text style={styles.cancelText}>Cancelar</Text>
@@ -148,6 +165,10 @@ const makeStyles = (colors: Colors) =>
     calcText: { color: colors.muted, fontSize: 14 },
     calcButton: { color: colors.primary, fontWeight: "700", fontSize: 14 },
     waterField: { marginTop: 12 },
+    reminder: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4 },
+    reminderText: { flex: 1 },
+    reminderTitle: { fontSize: 15, color: colors.text, fontWeight: "500" },
+    reminderHint: { fontSize: 12, color: colors.muted, marginTop: 2 },
     buttons: { flexDirection: "row", gap: 10, marginTop: 16 },
     button: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
     cancel: { backgroundColor: colors.bg },
