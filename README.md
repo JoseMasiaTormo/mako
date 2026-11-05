@@ -530,6 +530,14 @@ Las calorías y macros que calcula la IA son **estimaciones aproximadas**. Úsal
 
 ---
 
+## 🔒 Privacidad
+
+- Tu diario de comidas se guarda **solo en tu móvil** (SQLite). No hay cuentas ni registro.
+- Cuando usas la IA, la foto o la descripción de la comida pasa por el Worker y se envía a Google Gemini. Mako usa la **API de pago de Gemini**, así que Google **no usa esos datos para entrenar sus modelos** (ver [términos de la API de Gemini](https://ai.google.dev/gemini-api/terms)).
+- El Worker no guarda las fotos ni los textos. Solo cuenta cuántos análisis hace cada dispositivo al día con un identificador aleatorio que no está ligado a tu identidad.
+
+---
+
 ## 🙌 Créditos
 
 - [Open Food Facts](https://world.openfoodfacts.org): base de datos abierta de productos alimentarios (ODbL).
