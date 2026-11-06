@@ -6,8 +6,8 @@ Esta política explica qué datos trata la aplicación **Mako** (paquete `es.jos
 
 ## Responsable
 
-Mako es una aplicación desarrollada por **[NOMBRE DEL RESPONSABLE]**.
-Para cualquier duda o solicitud sobre privacidad puedes escribir a **[EMAIL DE CONTACTO]**.
+Mako es una aplicación desarrollada por **FCO JOSE MASIA TORMO**.
+Para cualquier duda o solicitud sobre privacidad puedes escribir a **josemasia2004@gmail.com**.
 
 ## Resumen
 
@@ -22,7 +22,7 @@ La aplicación guarda localmente, en una base de datos del propio móvil:
 
 - Las comidas que registras (descripción, cantidades, calorías y macronutrientes).
 - Tus objetivos diarios y el registro de agua.
-- Los productos que guardas en *Mis productos*.
+- Los productos que guardas en _Mis productos_.
 - Tus preferencias, como los recordatorios.
 - Un **identificador aleatorio de instalación** (un UUID generado por la app). No está ligado a tu identidad, a tu cuenta de Google ni a ningún identificador publicitario o del dispositivo.
 
@@ -81,11 +81,11 @@ Tratamos los datos descritos únicamente para:
 
 Solo con los proveedores necesarios para que la app funcione, y únicamente con la finalidad descrita:
 
-| Proveedor | Para qué | Datos |
-|---|---|---|
-| Cloudflare | Alojar el servidor | Peticiones de análisis, IP, identificador aleatorio |
-| Google (Gemini API) | Analizar comidas y etiquetas | Texto de la comida o foto de la etiqueta |
-| Open Food Facts | Buscar productos envasados | Código de barras o nombre del producto, IP |
+| Proveedor           | Para qué                     | Datos                                               |
+| ------------------- | ---------------------------- | --------------------------------------------------- |
+| Cloudflare          | Alojar el servidor           | Peticiones de análisis, IP, identificador aleatorio |
+| Google (Gemini API) | Analizar comidas y etiquetas | Texto de la comida o foto de la etiqueta            |
+| Open Food Facts     | Buscar productos envasados   | Código de barras o nombre del producto, IP          |
 
 Algunos de estos proveedores pueden tratar datos fuera del Espacio Económico Europeo, con las garantías previstas en sus propias políticas (como las cláusulas contractuales tipo de la Comisión Europea).
 
