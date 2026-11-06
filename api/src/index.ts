@@ -22,7 +22,7 @@ const MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
 const RETRY_STATUS = [500, 503, 504];
 const MAX_LENGTH = 300;
 
-const LIMITE_DISPOSITIVO = 50;
+const LIMITE_DISPOSITIVO = 15;
 const LIMITE_GLOBAL = 1000;
 const DEVICE_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

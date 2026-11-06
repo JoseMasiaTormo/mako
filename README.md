@@ -254,7 +254,7 @@ Para que nadie se coma la cuota de Gemini, cada instalación genera un **UUID** 
 
 - Rechaza las peticiones sin ID o con un ID mal formado (`400 sin_dispositivo`) **antes** de llamar a la IA.
 - Cuenta las peticiones de cada día en **Cloudflare D1** con un único `INSERT … ON CONFLICT … RETURNING`, en batch junto al contador global.
-- Corta con `429 limite_diario` al pasar de **50 análisis por dispositivo y día**, y con `429 servicio_lleno` al pasar de **1000 en total**.
+- Corta con `429 limite_diario` al pasar de **15 análisis por dispositivo y día**, y con `429 servicio_lleno` al pasar de **1000 en total**.
 - Los límites se pueden cambiar con las variables `LIMITE_DISPOSITIVO` y `LIMITE_GLOBAL`.
 
 Cuando se llega al límite, la app propone escanear el código de barras o meter la comida a mano, porque esas opciones no gastan IA.
@@ -533,7 +533,7 @@ Las calorías y macros que calcula la IA son **estimaciones aproximadas**. Úsal
 
 ## 🔒 Privacidad
 
-- Tu diario de comidas se guarda **solo en tu móvil** (SQLite). No hay cuentas ni registro.
+- Tu diario de comidas se guarda **solo en tu móvil** (SQLite). Ahora mismo no hace falta crear una cuenta ni registrarse.
 - Cuando usas la IA, la foto o la descripción de la comida pasa por el Worker y se envía a Google Gemini. Mako usa la **API de pago de Gemini**, así que Google **no usa esos datos para entrenar sus modelos** (ver [términos de la API de Gemini](https://ai.google.dev/gemini-api/terms)).
 - El Worker no guarda las fotos ni los textos. Solo cuenta cuántos análisis hace cada dispositivo al día con un identificador aleatorio que no está ligado a tu identidad.
 
