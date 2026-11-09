@@ -38,8 +38,10 @@ const SQL_SUMAR = `
 	RETURNING peticiones
 `;
 
+const hoy = () => new Date().toISOString().slice(0, 10);
+
 async function registrarUso(db: D1Database, deviceId: string) {
-	const dia = new Date().toISOString().slice(0, 10);
+	const dia = hoy();
 	const stmt = db.prepare(SQL_SUMAR);
 
 	const [dispositivo, total] = await db.batch<{ peticiones: number }>([stmt.bind(deviceId, dia), stmt.bind('__total__', dia)]);
@@ -48,6 +50,15 @@ async function registrarUso(db: D1Database, deviceId: string) {
 		usadasDispositivo: dispositivo.results[0]?.peticiones ?? 0,
 		usadasTotal: total.results[0]?.peticiones ?? 0,
 	};
+}
+
+// Lee cuántas peticiones lleva hoy un dispositivo, sin sumar ninguna.
+async function consultarUso(db: D1Database, deviceId: string) {
+	const fila = await db
+		.prepare('SELECT peticiones FROM uso_diario WHERE device_id = ? AND dia = ?')
+		.bind(deviceId, hoy())
+		.first<{ peticiones: number }>();
+	return fila?.peticiones ?? 0;
 }
 
 const SYSTEM_PROMPT = `Eres un nutricionista que estima calorías y macronutrientes de comidas españolas.
@@ -310,16 +321,36 @@ function leerLimite(valor: string | undefined, porDefecto: number) {
 	return Number.isInteger(n) && n > 0 ? n : porDefecto;
 }
 
+function limiteDispositivo(env: Env) {
+	return leerLimite(env.LIMITE_DISPOSITIVO, LIMITE_DISPOSITIVO);
+}
+
+function restantes(usadas: number, env: Env) {
+	return Math.max(0, limiteDispositivo(env) - usadas);
+}
+
+// Añade a la respuesta cuántas peticiones le quedan hoy al dispositivo.
+function conRestantes(res: Response, usadas: number, env: Env) {
+	res.headers.set('X-Peticiones-Restantes', String(restantes(usadas, env)));
+	res.headers.set('X-Peticiones-Limite', String(limiteDispositivo(env)));
+	return res;
+}
+
 function limiteSuperado(uso: { usadasDispositivo: number; usadasTotal: number }, env: Env) {
 	const limiteGlobal = leerLimite(env.LIMITE_GLOBAL, LIMITE_GLOBAL);
-	const limiteDispositivo = leerLimite(env.LIMITE_DISPOSITIVO, LIMITE_DISPOSITIVO);
+	const limite = limiteDispositivo(env);
 	if (uso.usadasTotal > limiteGlobal) {
 		return json({ error: 'servicio_lleno' }, 429);
 	}
-	if (uso.usadasDispositivo > limiteDispositivo) {
-		return json({ error: 'limite_diario', limite: limiteDispositivo }, 429);
+	if (uso.usadasDispositivo > limite) {
+		return json({ error: 'limite_diario', limite }, 429);
 	}
 	return null;
+}
+
+async function rutaUso(env: Env, deviceId: string) {
+	const usadas = await consultarUso(env.DB, deviceId);
+	return json({ limite: limiteDispositivo(env), restantes: restantes(usadas, env) });
 }
 
 async function rutaAnalizar(request: Request, env: Env, deviceId: string) {
@@ -334,13 +365,14 @@ async function rutaAnalizar(request: Request, env: Env, deviceId: string) {
 	if (!texto) return json({ error: 'texto_vacio' }, 400);
 	if (texto.length > MAX_LENGTH) return json({ error: 'texto_largo' }, 400);
 
-	const limite = limiteSuperado(await registrarUso(env.DB, deviceId), env);
-	if (limite) return limite;
+	const uso = await registrarUso(env.DB, deviceId);
+	const limite = limiteSuperado(uso, env);
+	if (limite) return conRestantes(limite, uso.usadasDispositivo, env);
 
 	const result = await analizar(texto, env.GEMINI_API_KEY);
-	if ('error' in result) return json({ error: result.error }, result.status);
+	if ('error' in result) return conRestantes(json({ error: result.error }, result.status), uso.usadasDispositivo, env);
 
-	return json(result);
+	return conRestantes(json(result), uso.usadasDispositivo, env);
 }
 
 async function rutaEtiqueta(request: Request, env: Env, deviceId: string) {
@@ -364,13 +396,14 @@ async function rutaEtiqueta(request: Request, env: Env, deviceId: string) {
 	const tipo = typeof body.tipo === 'string' ? body.tipo : 'image/jpeg';
 	if (!TIPOS_IMAGEN.includes(tipo)) return json({ error: 'imagen_invalida' }, 400);
 
-	const limite = limiteSuperado(await registrarUso(env.DB, deviceId), env);
-	if (limite) return limite;
+	const uso = await registrarUso(env.DB, deviceId);
+	const limite = limiteSuperado(uso, env);
+	if (limite) return conRestantes(limite, uso.usadasDispositivo, env);
 
 	const result = await leerEtiqueta(imagen, tipo, env.GEMINI_API_KEY);
-	if ('error' in result) return json({ error: result.error }, result.status);
+	if ('error' in result) return conRestantes(json({ error: result.error }, result.status), uso.usadasDispositivo, env);
 
-	return json(result);
+	return conRestantes(json(result), uso.usadasDispositivo, env);
 }
 
 export default {
@@ -378,20 +411,24 @@ export default {
 		try {
 			const url = new URL(request.url);
 
-			const ruta = url.pathname === '/analizar' ? rutaAnalizar : url.pathname === '/etiqueta' ? rutaEtiqueta : null;
-			if (!ruta) {
+			const rutasPost: Record<string, typeof rutaAnalizar> = { '/analizar': rutaAnalizar, '/etiqueta': rutaEtiqueta };
+			const esUso = url.pathname === '/uso';
+			const ruta = rutasPost[url.pathname];
+			if (!ruta && !esUso) {
 				return json({ error: 'no_encontrado' }, 404);
 			}
-			if (request.method !== 'POST') {
+			if (request.method !== (esUso ? 'GET' : 'POST')) {
 				return json({ error: 'metodo_no_permitido' }, 405);
-			}
-			if (!env.GEMINI_API_KEY) {
-				return json({ error: 'falta_api_key' }, 500);
 			}
 
 			const deviceId = request.headers.get('X-Device-Id') ?? '';
 			if (!DEVICE_ID_REGEX.test(deviceId)) {
 				return json({ error: 'sin_dispositivo' }, 400);
+			}
+			if (esUso) return await rutaUso(env, deviceId);
+
+			if (!env.GEMINI_API_KEY) {
+				return json({ error: 'falta_api_key' }, 500);
 			}
 
 			return await ruta(request, env, deviceId);

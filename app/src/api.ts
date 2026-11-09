@@ -26,6 +26,53 @@ export type EtiquetaLeida = {
 
 export class ApiError extends Error {}
 
+// ---------- Peticiones de IA restantes hoy ----------
+// El Worker devuelve en cada respuesta cuántas le quedan al dispositivo.
+// Se guarda aquí para que cualquier pantalla pueda mostrar la cuenta atrás.
+
+export type Uso = { restantes: number; limite: number };
+
+let usoActual: Uso | null = null;
+const oyentes = new Set<(u: Uso | null) => void>();
+
+function setUso(u: Uso) {
+  usoActual = u;
+  oyentes.forEach((f) => f(u));
+}
+
+export function getUso() {
+  return usoActual;
+}
+
+export function suscribirUso(f: (u: Uso | null) => void) {
+  oyentes.add(f);
+  return () => {
+    oyentes.delete(f);
+  };
+}
+
+function leerUsoDeCabeceras(res: Response) {
+  const restantes = Number(res.headers.get("X-Peticiones-Restantes"));
+  const limite = Number(res.headers.get("X-Peticiones-Limite"));
+  if (res.headers.has("X-Peticiones-Restantes") && Number.isFinite(restantes) && limite > 0) {
+    setUso({ restantes, limite });
+  }
+}
+
+/** Pregunta al Worker cuántas peticiones quedan hoy (no gasta ninguna). */
+export async function consultarUso(deviceId: string) {
+  try {
+    const res = await fetch(`${API_URL}/uso`, { headers: { "X-Device-Id": deviceId } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (typeof data?.restantes === "number" && typeof data?.limite === "number") {
+      setUso({ restantes: data.restantes, limite: data.limite });
+    }
+  } catch {
+    // Sin conexión: se mantiene el último valor conocido.
+  }
+}
+
 const MESSAGES: Record<string, string> = {
   cuota: "Se ha alcanzado el límite de uso. Prueba más tarde o añádelo a mano.",
   saturado: "La IA está saturada ahora mismo. Prueba en unos segundos.",
@@ -66,6 +113,7 @@ async function postApi(path: string, body: unknown, deviceId: string, timeoutMs:
     clearTimeout(timeout);
   }
 
+  leerUsoDeCabeceras(res);
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {

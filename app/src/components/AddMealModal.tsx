@@ -21,6 +21,7 @@ import { buscarPorCodigo } from "../openfoodfacts";
 import { getDeviceId } from "../device";
 import { prepararFoto } from "../image";
 import FloatingCard from "./FloatingCard";
+import { useUso } from "../hooks/useUso";
 
 type Props = {
   visible: boolean;
@@ -124,6 +125,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const [savingProduct, setSavingProduct] = useState(false);
 
   const db = useSQLiteContext();
+  const uso = useUso(db, visible);
 
   const reset = () => {
     setMode("ia");
@@ -302,6 +304,19 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     reset();
   };
 
+  const renderRestantes = (style?: object) => {
+    if (!uso) return null;
+    const agotado = uso.restantes <= 0;
+    const pocas = uso.restantes <= 3;
+    return (
+      <Text style={[styles.restantes, pocas && styles.restantesPocas, agotado && styles.restantesAgotado, style]}>
+        {agotado
+          ? `Sin análisis con IA hasta mañana (0/${uso.limite})`
+          : `Te quedan ${uso.restantes}/${uso.limite} análisis con IA hoy`}
+      </Text>
+    );
+  };
+
   const renderIa = () => {
     if (!items.length) {
       return (
@@ -317,6 +332,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
             editable={!loading}
           />
           <Text style={styles.hint}>Los valores son estimaciones aproximadas.</Text>
+          {renderRestantes()}
           <Pressable
             style={[styles.scanButton, loading && styles.disabled]}
             onPress={() => setScanning(true)}
@@ -439,6 +455,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
             <Text style={styles.scanText}>Rellenar con una foto de la etiqueta</Text>
           )}
         </Pressable>
+        {renderRestantes(styles.restantesEtiqueta)}
         <Field label="Nombre" value={d.nombre} onChangeText={setProductField("nombre")} placeholder="Yogur griego" />
         <View style={styles.row}>
           <Field label="Marca" value={d.marca} onChangeText={setProductField("marca")} placeholder="Hacendado" />
@@ -566,6 +583,10 @@ const makeStyles = (colors: Colors) =>
     },
     textarea: { minHeight: 90, textAlignVertical: "top" },
     hint: { fontSize: 12, color: colors.muted, marginTop: 6 },
+    restantes: { fontSize: 12, color: colors.muted, marginTop: 4, fontWeight: "600" },
+    restantesPocas: { color: "#D97706" },
+    restantesAgotado: { color: colors.danger },
+    restantesEtiqueta: { marginTop: -10, marginBottom: 12, textAlign: "center" },
     query: { fontSize: 15, fontStyle: "italic", color: colors.muted, marginBottom: 12 },
     itemRow: {
       flexDirection: "row",

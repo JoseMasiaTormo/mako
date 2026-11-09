@@ -283,6 +283,46 @@ describe("límite diario por dispositivo", () => {
 	});
 });
 
+describe("peticiones restantes", () => {
+	it("cada respuesta lleva X-Peticiones-Restantes contando hacia atrás hasta 0", async () => {
+		simularGemini(geminiOk({ items: [] }));
+		const id = crypto.randomUUID();
+
+		// En los tests LIMITE_DISPOSITIVO = 3.
+		for (const esperado of ["2", "1", "0"]) {
+			const res = await post("/analizar", { texto: "pan" }, id);
+			expect(res.headers.get("X-Peticiones-Restantes")).toBe(esperado);
+			expect(res.headers.get("X-Peticiones-Limite")).toBe("3");
+		}
+
+		const res = await post("/analizar", { texto: "pan" }, id);
+		expect(res.status).toBe(429);
+		expect(res.headers.get("X-Peticiones-Restantes")).toBe("0");
+	});
+
+	it("GET /uso devuelve las restantes sin gastar ninguna", async () => {
+		simularGemini(geminiOk({ items: [] }));
+		const id = crypto.randomUUID();
+		const uso = () => SELF.fetch("https://api.test/uso", { headers: { "X-Device-Id": id } });
+
+		let res = await uso();
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ limite: 3, restantes: 3 });
+
+		await post("/analizar", { texto: "pan" }, id);
+		res = await uso();
+		expect(await res.json()).toEqual({ limite: 3, restantes: 2 });
+		// Consultar no cuenta como petición.
+		res = await uso();
+		expect(await res.json()).toEqual({ limite: 3, restantes: 2 });
+	});
+
+	it("GET /uso sin X-Device-Id devuelve 400", async () => {
+		const res = await SELF.fetch("https://api.test/uso");
+		expect(res.status).toBe(400);
+	});
+});
+
 describe("/etiqueta", () => {
 	it("una imagen que no es base64 válido devuelve 400 imagen_invalida", async () => {
 		const res = await post("/etiqueta", { imagen: "esto no es base64!!", tipo: "image/jpeg" });
