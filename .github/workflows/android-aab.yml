@@ -34,10 +34,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
-
       - uses: expo/expo-github-action@v8
         with:
           eas-version: latest
