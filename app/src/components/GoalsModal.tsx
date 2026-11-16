@@ -123,6 +123,7 @@ export default function GoalsModal({ visible, initial, onClose, onSave, reminder
             onValueChange={onToggleReminders}
             trackColor={{ true: colors.primary, false: colors.border }}
             thumbColor="#fff"
+            style={styles.switch}
           />
         </View>
 
@@ -165,10 +166,20 @@ const makeStyles = (colors: Colors) =>
     calcText: { color: colors.muted, fontSize: 14 },
     calcButton: { color: colors.primary, fontWeight: "700", fontSize: 14 },
     waterField: { marginTop: 12 },
-    reminder: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4 },
+    reminder: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginTop: 4,
+      backgroundColor: colors.bg,
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+    },
     reminderText: { flex: 1 },
-    reminderTitle: { fontSize: 15, color: colors.text, fontWeight: "500" },
-    reminderHint: { fontSize: 12, color: colors.muted, marginTop: 2 },
+    reminderTitle: { fontSize: 17, color: colors.text, fontWeight: "600" },
+    reminderHint: { fontSize: 14, color: colors.muted, marginTop: 4 },
+    switch: { transform: [{ scaleX: 1.25 }, { scaleY: 1.25 }] },
     buttons: { flexDirection: "row", gap: 10, marginTop: 16 },
     button: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
     cancel: { backgroundColor: colors.bg },

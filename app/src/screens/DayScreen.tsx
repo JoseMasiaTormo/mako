@@ -9,6 +9,8 @@ import {
   deleteMeal,
   getGlassMl,
   getGoals,
+  getIngredientes,
+  Ingrediente,
   getMealsByDate,
   getWaterByDate,
   getSettings,
@@ -20,6 +22,7 @@ import {
   setGlassMl,
   setSettings,
   sumTotals,
+  updateIngredientes,
   updateMealGrams,
 } from "../db";
 import { addDays, labelFor, todayKey } from "../utils/date";
@@ -44,7 +47,7 @@ export default function DayScreen() {
   const [goals, setGoals] = useState<Goals | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [goalsVisible, setGoalsVisible] = useState(false);
-  const [editing, setEditing] = useState<Meal | null>(null);
+  const [editing, setEditing] = useState<{ meal: Meal; ingredientes: Ingrediente[] } | null>(null);
   const [reminders, setReminders] = useState(false);
 
   const load = useCallback(async () => {
@@ -125,8 +128,19 @@ export default function DayScreen() {
     syncReminders(db).catch(() => {});
   };
 
+  const openEdit = async (meal: Meal) => {
+    const ingredientes = await getIngredientes(db, meal.id).catch(() => []);
+    setEditing({ meal, ingredientes });
+  };
+
   const handleEditGrams = async (meal: Meal, grams: number) => {
     await updateMealGrams(db, meal, grams);
+    setEditing(null);
+    load();
+  };
+
+  const handleEditIngredientes = async (meal: Meal, ingredientes: Ingrediente[]) => {
+    await updateIngredientes(db, meal.id, ingredientes);
     setEditing(null);
     load();
   };
@@ -208,7 +222,7 @@ export default function DayScreen() {
         renderItem={({ item }) => (
           <MealItem
             meal={item}
-            onPress={item.grams ? () => setEditing(item) : undefined}
+            onPress={item.grams ? () => openEdit(item) : undefined}
             onLongPress={() => handleDelete(item)}
           />
         )}
@@ -222,7 +236,14 @@ export default function DayScreen() {
 
       <AddMealModal visible={modalVisible} onClose={() => setModalVisible(false)} onSave={handleAdd} />
 
-      <EditGramsModal key={editing?.id ?? "cerrado"} meal={editing} onClose={() => setEditing(null)} onSave={handleEditGrams} />
+      <EditGramsModal
+        key={editing?.meal.id ?? "cerrado"}
+        meal={editing?.meal ?? null}
+        ingredientes={editing?.ingredientes ?? []}
+        onClose={() => setEditing(null)}
+        onSave={handleEditGrams}
+        onSaveIngredientes={handleEditIngredientes}
+      />
 
       <GoalsModal
         visible={goalsVisible}
