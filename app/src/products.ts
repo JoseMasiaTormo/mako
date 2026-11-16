@@ -70,6 +70,43 @@ export function buscarEnMisProductos(productos: MiProducto[], marca: string, bus
   return mejor;
 }
 
+// Palabras que no cuentan al comparar nombres: "tortilla de patatas" = "tortilla patatas".
+const PALABRAS_VACIAS = new Set(["de", "del", "con", "la", "el", "los", "las", "al", "en", "un", "una"]);
+
+function palabrasClave(s: string) {
+  return palabras(s).filter((w) => !PALABRAS_VACIAS.has(w));
+}
+
+function coincidePalabraExacta(a: string, b: string) {
+  // Solo plurales: "magdalena" / "magdalenas", "yogur" / "yogures". No "pan" / "panecillos".
+  const [corta, larga] = a.length <= b.length ? [a, b] : [b, a];
+  return larga.startsWith(corta) && larga.length - corta.length <= 2;
+}
+
+function contiene(a: string[], b: string[]) {
+  return a.every((w) => b.some((x) => coincidePalabraExacta(w, x)));
+}
+
+/**
+ * Busca entre Mis productos uno cuyo nombre sea el texto dado (sin importar orden, mayúsculas,
+ * tildes, plurales ni si se escribe la marca). Más estricto que buscarEnMisProductos: sirve para
+ * comidas sin marca, donde "pollo" no debe coincidir con "pollo al curry de mi madre".
+ */
+export function buscarPorNombre(productos: MiProducto[], texto: string): MiProducto | null {
+  const pedidas = palabrasClave(texto);
+  if (!pedidas.length) return null;
+
+  return (
+    productos.find((p) => {
+      if (variantesDistintas(p.nombre, texto) > 0) return false;
+      const nombre = palabrasClave(p.nombre);
+      const conMarca = palabrasClave(`${p.nombre} ${p.marca}`);
+      // Todas las palabras escritas están en el producto, y todas las del nombre están en lo escrito.
+      return contiene(pedidas, conMarca) && contiene(nombre, pedidas);
+    }) ?? null
+  );
+}
+
 async function buscarProducto(db: SQLiteDatabase, marca: string, busqueda: string): Promise<Producto100g | null> {
   const clave = claveDe(marca, busqueda);
   const cached = await getCachedProduct(db, clave);
@@ -93,13 +130,19 @@ async function buscarProducto(db: SQLiteDatabase, marca: string, busqueda: strin
   return producto;
 }
 
-/** Orden: Mis productos → caché local → Open Food Facts. */
+/**
+ * Productos de marca: Mis productos → caché local → Open Food Facts.
+ * Resto: Mis productos, solo si el nombre coincide (comidas creadas a mano).
+ */
 export async function enriquecerItems(db: SQLiteDatabase, items: AiItem[]): Promise<AiItem[]> {
-  const misProductos = items.some((i) => i.es_producto && i.busqueda) ? await getMisProductos(db).catch(() => []) : [];
+  const misProductos = await getMisProductos(db).catch(() => []);
 
   return Promise.all(
     items.map(async (item) => {
-      if (!item.es_producto || !item.busqueda) return item;
+      if (!item.es_producto || !item.busqueda) {
+        const mio = buscarPorNombre(misProductos, item.nombre);
+        return mio ? { ...item, ...itemDeEtiqueta(mio, mio.marca, item.gramos), es_producto: false } : item;
+      }
 
       try {
         const p =

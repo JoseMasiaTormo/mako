@@ -10,11 +10,11 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { getMiProductoPorCodigo, NewMeal, NuevoMiProducto, saveMiProducto } from "../db";
+import { getMiProductoPorCodigo, getMisProductos, NewMeal, NuevoMiProducto, saveMiProducto } from "../db";
 import { AiItem, analizarComida, ApiError, EtiquetaLeida, leerEtiqueta } from "../api";
 import { Colors, useTheme, useThemedStyles } from "../theme";
 import { useSQLiteContext } from "expo-sqlite";
-import { enriquecerItems, itemDeEtiqueta } from "../products";
+import { buscarPorNombre, enriquecerItems, itemDeEtiqueta } from "../products";
 import BarcodeScanner from "./BarcodeScanner";
 import LabelCamera from "./LabelCamera";
 import { buscarPorCodigo } from "../openfoodfacts";
@@ -29,7 +29,7 @@ type Props = {
   onSave: (meal: Omit<NewMeal, "date">) => void;
 };
 
-type Mode = "ia" | "manual";
+type Mode = "auto" | "manual";
 type EditableItem = { base: AiItem; gramosText: string };
 
 const emptyManual = { name: "", grams: "", kcal: "", protein: "", carbs: "", fat: "" };
@@ -113,7 +113,7 @@ function Field({
 export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
-  const [mode, setMode] = useState<Mode>("ia");
+  const [mode, setMode] = useState<Mode>("auto");
   const [texto, setTexto] = useState("");
   const [items, setItems] = useState<EditableItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -123,12 +123,15 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const [capturingLabel, setCapturingLabel] = useState(false);
   const [readingLabel, setReadingLabel] = useState(false);
   const [savingProduct, setSavingProduct] = useState(false);
+  // Producto encontrado en Open Food Facts al escanear. Se guarda en Mis productos al añadirlo,
+  // para que otro día se encuentre escribiendo su nombre (modo Automático) o escaneándolo sin conexión.
+  const [escaneado, setEscaneado] = useState<NuevoMiProducto | null>(null);
 
   const db = useSQLiteContext();
   const uso = useUso(db, visible);
 
   const reset = () => {
-    setMode("ia");
+    setMode("auto");
     setTexto("");
     setItems([]);
     setLoading(false);
@@ -138,6 +141,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     setCapturingLabel(false);
     setReadingLabel(false);
     setSavingProduct(false);
+    setEscaneado(null);
   };
 
   const close = () => {
@@ -149,6 +153,13 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     if (!texto.trim() || loading) return;
     setLoading(true);
     try {
+      // Si lo escrito es el nombre de uno de Mis productos, se usa directamente y no se gasta IA.
+      const mio = buscarPorNombre(await getMisProductos(db).catch(() => []), texto);
+      if (mio) {
+        mostrarProducto(itemDeEtiqueta(mio, mio.marca, mio.racion_g || 100));
+        return;
+      }
+
       const deviceId = await getDeviceId(db);
       const result = await analizarComida(texto.trim(), deviceId);
       const enriched = await enriquecerItems(db, result);
@@ -163,6 +174,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const mostrarProducto = (base: AiItem) => {
     setTexto(base.nombre);
     setItems([{ base, gramosText: String(base.gramos) }]);
+    setEscaneado(null);
   };
 
   const handleScanned = async (codigo: string) => {
@@ -186,6 +198,16 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
       }
 
       mostrarProducto(itemDeEtiqueta(p, p.marca, p.gramosSugeridos));
+      setEscaneado({
+        codigo,
+        nombre: p.nombre,
+        marca: p.marca,
+        kcal: p.kcal,
+        proteina: p.proteina,
+        carbos: p.carbos,
+        grasa: p.grasa,
+        racion_g: p.gramosSugeridos,
+      });
     } catch {
       Alert.alert("Ups", "No se pudo conectar. Revisa tu conexión a internet.");
     } finally {
@@ -274,6 +296,10 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
 
   const saveIa = () => {
     if (!computed.length) return;
+    if (escaneado) {
+      // Si falla no pasa nada: la comida se apunta igual, solo que el producto no queda guardado.
+      saveMiProducto(db, escaneado).catch(() => {});
+    }
     const t = texto.trim();
     onSave({
       name: t.charAt(0).toUpperCase() + t.slice(1),
@@ -282,6 +308,15 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
       protein: round1(total.proteina),
       carbs: round1(total.carbos),
       fat: round1(total.grasa),
+      ingredientes: computed.map((i) => ({
+        nombre: i.nombre,
+        gramos: i.gramos,
+        kcal: i.kcal,
+        proteina: i.proteina,
+        carbos: i.carbos,
+        grasa: i.grasa,
+        fuente: i.fuente,
+      })),
     });
     reset();
   };
@@ -289,9 +324,26 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const setManualField = (key: ManualKey) => (value: string) => setManual((f) => ({ ...f, [key]: value }));
 
   const saveManual = () => {
-    if (!manual.name.trim()) {
+    const nombre = manual.name.trim();
+    if (!nombre) {
       Alert.alert("Falta el nombre");
       return;
+    }
+    // Con gramos se puede pasar a valores por 100 g y guardarlo en Mis productos,
+    // para encontrarlo otro día escribiendo su nombre en el modo Automático.
+    const gramos = manual.grams ? num(manual.grams) : 0;
+    if (gramos > 0) {
+      const f = 100 / gramos;
+      saveMiProducto(db, {
+        codigo: null,
+        nombre,
+        marca: "",
+        kcal: num(manual.kcal) * f,
+        proteina: num(manual.protein) * f,
+        carbos: num(manual.carbs) * f,
+        grasa: num(manual.fat) * f,
+        racion_g: gramos,
+      }).catch(() => {});
     }
     onSave({
       name: manual.name.trim(),
@@ -393,7 +445,13 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
           </Text>
         </View>
         <View style={styles.buttons}>
-          <Pressable style={[styles.button, styles.cancel]} onPress={() => setItems([])}>
+          <Pressable
+            style={[styles.button, styles.cancel]}
+            onPress={() => {
+              setItems([]);
+              setEscaneado(null);
+            }}
+          >
             <Text style={styles.cancelText}>Volver</Text>
           </Pressable>
           <Pressable
@@ -425,6 +483,9 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
         <Field label="Carbos (g)" value={manual.carbs} onChangeText={setManualField("carbs")} numeric />
         <Field label="Grasa (g)" value={manual.fat} onChangeText={setManualField("fat")} numeric />
       </View>
+      <Text style={styles.hint}>
+        Si pones los gramos, se guarda en Mis productos y otro día te basta con escribir su nombre.
+      </Text>
       <View style={styles.buttons}>
         <Pressable style={[styles.button, styles.cancel]} onPress={close}>
           <Text style={styles.cancelText}>Cancelar</Text>
@@ -520,11 +581,11 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
 
               <View style={styles.tabs}>
                 <Pressable
-                  style={[styles.tab, mode === "ia" && styles.tabActive]}
-                  onPress={() => setMode("ia")}
+                  style={[styles.tab, mode === "auto" && styles.tabActive]}
+                  onPress={() => setMode("auto")}
                   disabled={loading}
                 >
-                  <Text style={[styles.tabText, mode === "ia" && styles.tabTextActive]}>Con IA</Text>
+                  <Text style={[styles.tabText, mode === "auto" && styles.tabTextActive]}>Automático</Text>
                 </Pressable>
                 <Pressable
                   style={[styles.tab, mode === "manual" && styles.tabActive]}
@@ -535,7 +596,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
                 </Pressable>
               </View>
 
-              {mode === "ia" ? renderIa() : renderManual()}
+              {mode === "auto" ? renderIa() : renderManual()}
             </>
           )}
         </FloatingCard>

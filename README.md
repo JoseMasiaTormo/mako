@@ -330,7 +330,7 @@ mako/
 │       ├── theme.ts                # Paleta de colores
 │       ├── utils/date.ts           # Claves de fecha y etiquetas en español
 │       ├── components/
-│       │   ├── AddMealModal.tsx    # Modo IA / Manual / producto, edición de gramos
+│       │   ├── AddMealModal.tsx    # Modo Automático / Manual / producto, edición de gramos
 │       │   ├── BarcodeScanner.tsx  # Escáner EAN/UPC
 │       │   ├── LabelCamera.tsx     # Foto de la tabla nutricional
 │       │   ├── CameraPermission.tsx

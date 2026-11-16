@@ -1,5 +1,5 @@
 import { SQLiteDatabase } from "expo-sqlite";
-import type { Producto100g } from "./openfoodfacts";
+import { normalizar, type Producto100g } from "./openfoodfacts";
 
 export type Meal = {
   id: number;
@@ -13,7 +13,22 @@ export type Meal = {
   created_at: string;
 };
 
-export type NewMeal = Omit<Meal, "id" | "created_at">;
+/** Ingrediente de una comida desglosada (lo que devuelve la IA). Valores para sus gramos. */
+export type Ingrediente = {
+  id: number;
+  meal_id: number;
+  nombre: string;
+  gramos: number;
+  kcal: number;
+  proteina: number;
+  carbos: number;
+  grasa: number;
+  fuente: "ia" | "etiqueta";
+};
+
+export type NuevoIngrediente = Omit<Ingrediente, "id" | "meal_id">;
+
+export type NewMeal = Omit<Meal, "id" | "created_at"> & { ingredientes?: NuevoIngrediente[] };
 
 export type Totals = {
   kcal: number;
@@ -22,7 +37,7 @@ export type Totals = {
   fat: number;
 };
 
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
@@ -112,6 +127,26 @@ export async function migrate(db: SQLiteDatabase) {
     version = 6;
   }
 
+  if (version === 6) {
+    // Desglose de cada comida, para poder editar los ingredientes después de guardarla.
+    // Las comidas anteriores no tienen filas aquí y se editan por el total.
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS meal_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        meal_id INTEGER NOT NULL,
+        nombre TEXT NOT NULL,
+        gramos REAL NOT NULL DEFAULT 0,
+        kcal REAL NOT NULL DEFAULT 0,
+        proteina REAL NOT NULL DEFAULT 0,
+        carbos REAL NOT NULL DEFAULT 0,
+        grasa REAL NOT NULL DEFAULT 0,
+        fuente TEXT NOT NULL DEFAULT 'ia'
+      );
+      CREATE INDEX IF NOT EXISTS idx_meal_items_meal ON meal_items(meal_id);
+    `);
+    version = 7;
+  }
+
   await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
 }
 
@@ -120,35 +155,117 @@ export function getMealsByDate(db: SQLiteDatabase, date: string) {
 }
 
 export async function addMeal(db: SQLiteDatabase, meal: NewMeal) {
-  const result = await db.runAsync(
-    "INSERT INTO meals (date, name, grams, kcal, protein, carbs, fat) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    meal.date,
-    meal.name,
-    meal.grams,
-    meal.kcal,
-    meal.protein,
-    meal.carbs,
-    meal.fat,
-  );
-  return result.lastInsertRowId;
+  let id = 0;
+  await db.withTransactionAsync(async () => {
+    const result = await db.runAsync(
+      "INSERT INTO meals (date, name, grams, kcal, protein, carbs, fat) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      meal.date,
+      meal.name,
+      meal.grams,
+      meal.kcal,
+      meal.protein,
+      meal.carbs,
+      meal.fat,
+    );
+    id = result.lastInsertRowId;
+    for (const i of meal.ingredientes ?? []) {
+      await db.runAsync(
+        "INSERT INTO meal_items (meal_id, nombre, gramos, kcal, proteina, carbos, grasa, fuente) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        id,
+        i.nombre,
+        i.gramos,
+        i.kcal,
+        i.proteina,
+        i.carbos,
+        i.grasa,
+        i.fuente,
+      );
+    }
+  });
+  return id;
 }
 
-/** Cambia los gramos de una comida y reescala kcal y macros en proporción. */
-export function updateMealGrams(db: SQLiteDatabase, meal: Meal, grams: number) {
+export function getIngredientes(db: SQLiteDatabase, mealId: number) {
+  return db.getAllAsync<Ingrediente>("SELECT * FROM meal_items WHERE meal_id = ? ORDER BY id ASC", mealId);
+}
+
+/**
+ * Guarda los ingredientes editados de una comida: actualiza los que siguen, borra los quitados
+ * y recalcula el total de la comida a partir de ellos.
+ */
+export async function updateIngredientes(db: SQLiteDatabase, mealId: number, ingredientes: Ingrediente[]) {
+  const total = ingredientes.reduce(
+    (acc, i) => ({
+      gramos: acc.gramos + i.gramos,
+      kcal: acc.kcal + i.kcal,
+      proteina: acc.proteina + i.proteina,
+      carbos: acc.carbos + i.carbos,
+      grasa: acc.grasa + i.grasa,
+    }),
+    { gramos: 0, kcal: 0, proteina: 0, carbos: 0, grasa: 0 },
+  );
+  const ids = ingredientes.map((i) => i.id);
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `DELETE FROM meal_items WHERE meal_id = ? AND id NOT IN (${ids.map(() => "?").join(", ")})`,
+      mealId,
+      ...ids,
+    );
+    for (const i of ingredientes) {
+      await db.runAsync(
+        "UPDATE meal_items SET gramos = ?, kcal = ?, proteina = ?, carbos = ?, grasa = ? WHERE id = ?",
+        i.gramos,
+        i.kcal,
+        i.proteina,
+        i.carbos,
+        i.grasa,
+        i.id,
+      );
+    }
+    await db.runAsync(
+      "UPDATE meals SET grams = ?, kcal = ?, protein = ?, carbs = ?, fat = ? WHERE id = ?",
+      Math.round(total.gramos),
+      Math.round(total.kcal),
+      Math.round(total.proteina * 10) / 10,
+      Math.round(total.carbos * 10) / 10,
+      Math.round(total.grasa * 10) / 10,
+      mealId,
+    );
+  });
+}
+
+/** Cambia los gramos de una comida y reescala kcal y macros en proporción (también su ingrediente, si lo tiene). */
+export async function updateMealGrams(db: SQLiteDatabase, meal: Meal, grams: number) {
   const f = meal.grams && meal.grams > 0 ? grams / meal.grams : 1;
-  return db.runAsync(
-    "UPDATE meals SET grams = ?, kcal = ?, protein = ?, carbs = ?, fat = ? WHERE id = ?",
-    grams,
-    meal.kcal * f,
-    meal.protein * f,
-    meal.carbs * f,
-    meal.fat * f,
-    meal.id,
-  );
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      "UPDATE meals SET grams = ?, kcal = ?, protein = ?, carbs = ?, fat = ? WHERE id = ?",
+      grams,
+      meal.kcal * f,
+      meal.protein * f,
+      meal.carbs * f,
+      meal.fat * f,
+      meal.id,
+    );
+    await db.runAsync(
+      `UPDATE meal_items SET gramos = gramos * ?, kcal = kcal * ?, proteina = proteina * ?, carbos = carbos * ?,
+        grasa = grasa * ? WHERE meal_id = ?`,
+      f,
+      f,
+      f,
+      f,
+      f,
+      meal.id,
+    );
+  });
 }
 
-export function deleteMeal(db: SQLiteDatabase, id: number) {
-  return db.runAsync("DELETE FROM meals WHERE id = ?", id);
+export async function deleteMeal(db: SQLiteDatabase, id: number) {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM meal_items WHERE meal_id = ?", id);
+    await db.runAsync("DELETE FROM meals WHERE id = ?", id);
+  });
 }
 
 export async function getSettings(db: SQLiteDatabase, key: string) {
@@ -227,8 +344,31 @@ export function getMisProductos(db: SQLiteDatabase) {
   return db.getAllAsync<MiProducto>("SELECT * FROM mis_productos ORDER BY creado DESC, id DESC");
 }
 
-/** Guarda un producto. Si ya hay uno con el mismo código, lo actualiza. Devuelve su id. */
+/**
+ * Guarda un producto. Si ya hay uno con el mismo código, lo actualiza. Si no tiene código
+ * (creado a mano), actualiza el que tenga el mismo nombre y marca. Devuelve su id.
+ */
 export async function saveMiProducto(db: SQLiteDatabase, p: NuevoMiProducto) {
+  if (p.codigo == null) {
+    const existente = (await getMisProductos(db)).find(
+      (x) => x.codigo == null && normalizar(x.nombre) === normalizar(p.nombre) && normalizar(x.marca) === normalizar(p.marca),
+    );
+    if (existente) {
+      await db.runAsync(
+        "UPDATE mis_productos SET nombre = ?, marca = ?, kcal = ?, proteina = ?, carbos = ?, grasa = ?, racion_g = ? WHERE id = ?",
+        p.nombre,
+        p.marca,
+        p.kcal,
+        p.proteina,
+        p.carbos,
+        p.grasa,
+        p.racion_g,
+        existente.id,
+      );
+      return existente.id;
+    }
+  }
+
   const row = await db.getFirstAsync<{ id: number }>(
     `INSERT INTO mis_productos (codigo, nombre, marca, kcal, proteina, carbos, grasa, racion_g)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
