@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Meal } from "../db";
 import { Colors, useThemedStyles } from "../theme";
+import { formatUnidades } from "../utils/unidades";
 
 type Props = {
   meal: Meal;
@@ -17,6 +18,7 @@ export default function MealItem({ meal, onPress, onLongPress }: Props) {
           {meal.name}
         </Text>
         <Text style={styles.macros}>
+          {meal.unidades != null ? `${formatUnidades(meal.unidades)} ud · ` : ""}
           {meal.grams != null ? `${Math.round(meal.grams)} g · ` : ""}P {Math.round(meal.protein)} · C{" "}
           {Math.round(meal.carbs)} · G {Math.round(meal.fat)}
         </Text>

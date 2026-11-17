@@ -21,12 +21,16 @@ export function nombreConMarca(nombre: string, marca: string) {
   return `${nombre} (${marca})`;
 }
 
-/** Item de la lista con los valores de la etiqueta (por 100 g) escalados a los gramos indicados. */
-export function itemDeEtiqueta(p: Producto100g, marca: string, gramos: number): AiItem {
+/**
+ * Item de la lista con los valores de la etiqueta (por 100 g) escalados a los gramos indicados.
+ * Si no se dice el peso de una unidad, los gramos indicados cuentan como una.
+ */
+export function itemDeEtiqueta(p: Producto100g, marca: string, gramos: number, unidadG = gramos): AiItem {
   const f = gramos / 100;
   return {
     nombre: nombreConMarca(p.nombre, marca),
     gramos,
+    unidad_g: unidadG,
     kcal: Math.round(p.kcal * f),
     proteina: round1(p.proteina * f),
     carbos: round1(p.carbos * f),
@@ -131,6 +135,16 @@ async function buscarProducto(db: SQLiteDatabase, marca: string, busqueda: strin
 }
 
 /**
+ * Item con los valores de uno de Mis productos. Si tiene ración, se toma como peso de una unidad
+ * y se mantienen las unidades que dijo la IA ("2 kinder joy" → 2 × su ración).
+ */
+function deMisProductos(mio: MiProducto, item: AiItem): AiItem {
+  if (!mio.racion_g || item.unidad_g <= 0) return itemDeEtiqueta(mio, mio.marca, item.gramos, item.unidad_g);
+  const unidades = item.gramos / item.unidad_g;
+  return itemDeEtiqueta(mio, mio.marca, Math.round(unidades * mio.racion_g * 10) / 10, mio.racion_g);
+}
+
+/**
  * Productos de marca: Mis productos → caché local → Open Food Facts.
  * Resto: Mis productos, solo si el nombre coincide (comidas creadas a mano).
  */
@@ -141,16 +155,15 @@ export async function enriquecerItems(db: SQLiteDatabase, items: AiItem[]): Prom
     items.map(async (item) => {
       if (!item.es_producto || !item.busqueda) {
         const mio = buscarPorNombre(misProductos, item.nombre);
-        return mio ? { ...item, ...itemDeEtiqueta(mio, mio.marca, item.gramos), es_producto: false } : item;
+        return mio ? { ...item, ...deMisProductos(mio, item), es_producto: false } : item;
       }
 
       try {
-        const p =
-          buscarEnMisProductos(misProductos, item.marca, item.busqueda) ??
-          (await buscarProducto(db, item.marca, item.busqueda));
+        const mio = buscarEnMisProductos(misProductos, item.marca, item.busqueda);
+        const p = mio ?? (await buscarProducto(db, item.marca, item.busqueda));
         if (!p) return item;
 
-        const enriched = itemDeEtiqueta(p, item.marca, item.gramos);
+        const enriched = mio ? deMisProductos(mio, item) : itemDeEtiqueta(p, item.marca, item.gramos, item.unidad_g);
         return { ...item, ...enriched, es_producto: item.es_producto, busqueda: item.busqueda };
       } catch {
         return item;

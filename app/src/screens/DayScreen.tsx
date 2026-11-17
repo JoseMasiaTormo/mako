@@ -34,6 +34,8 @@ import GoalsModal from "../components/GoalsModal";
 import EditGramsModal from "../components/EditGramsModal";
 import Logo from "../components/Logo";
 import WaterCard from "../components/WaterCard";
+import NovedadesModal from "../components/NovedadesModal";
+import { getNovedadesPendientes, marcarNovedadesVistas, Novedad } from "../novedades";
 import { Colors, useTheme, useThemedStyles } from "../theme";
 
 export default function DayScreen() {
@@ -49,6 +51,7 @@ export default function DayScreen() {
   const [goalsVisible, setGoalsVisible] = useState(false);
   const [editing, setEditing] = useState<{ meal: Meal; ingredientes: Ingrediente[] } | null>(null);
   const [reminders, setReminders] = useState(false);
+  const [novedades, setNovedades] = useState<Novedad | null>(null);
 
   const load = useCallback(async () => {
     const [rows, ml] = await Promise.all([getMealsByDate(db, date), getWaterByDate(db, date)]);
@@ -76,6 +79,8 @@ export default function DayScreen() {
 
       const seen = await getSettings(db, "aviso_visto");
       if (!seen) {
+        // Primera vez que se abre la app: no hay nada "nuevo" que contar.
+        marcarNovedadesVistas(db).catch(() => {});
         // Primero el aviso y luego el permiso, para no encadenar dos diálogos a la vez.
         Alert.alert(
           "Antes de empezar",
@@ -93,6 +98,10 @@ export default function DayScreen() {
         );
       } else {
         reminders();
+        // Tras una actualización, las notas de la versión (una sola vez).
+        getNovedadesPendientes(db)
+          .then(setNovedades)
+          .catch(() => {});
       }
     })();
   }, [db]);
@@ -243,6 +252,14 @@ export default function DayScreen() {
         onClose={() => setEditing(null)}
         onSave={handleEditGrams}
         onSaveIngredientes={handleEditIngredientes}
+      />
+
+      <NovedadesModal
+        novedad={novedades}
+        onClose={() => {
+          setNovedades(null);
+          marcarNovedadesVistas(db).catch(() => {});
+        }}
       />
 
       <GoalsModal

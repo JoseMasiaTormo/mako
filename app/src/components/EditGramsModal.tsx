@@ -3,6 +3,8 @@ import { Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { Ingrediente, Meal } from "../db";
 import { Colors, useTheme, useThemedStyles } from "../theme";
 import FloatingCard from "./FloatingCard";
+import UnitStepper from "./UnitStepper";
+import { gramosDeUnidades } from "../utils/unidades";
 
 type Props = {
   meal: Meal | null;
@@ -43,6 +45,8 @@ export default function EditGramsModal({ meal, ingredientes, onClose, onSave, on
   );
 
   const desglosada = ingredientes.length > 1;
+  // Peso de una unidad al editar el total: el de su ingrediente, o (comidas antiguas) lo apuntado cuenta como una.
+  const unidadG = ingredientes.length === 1 && ingredientes[0].unidad_g > 0 ? ingredientes[0].unidad_g : (meal?.grams ?? 0);
 
   const grams = num(value);
   const f = meal?.grams ? grams / meal.grams : 0;
@@ -63,6 +67,12 @@ export default function EditGramsModal({ meal, ingredientes, onClose, onSave, on
 
   const setItemGrams = (index: number) => (v: string) =>
     setItems((prev) => prev.map((it, i) => (i === index ? { ...it, gramosText: v } : it)));
+  const setItemUnidades = (index: number) => (unidades: number) =>
+    setItems((prev) =>
+      prev.map((it, i) =>
+        i === index ? { ...it, gramosText: String(gramosDeUnidades(unidades, it.base.unidad_g)) } : it,
+      ),
+    );
   const removeItem = (index: number) => setItems((prev) => prev.filter((_, i) => i !== index));
 
   const renderTotal = () => (
@@ -77,6 +87,12 @@ export default function EditGramsModal({ meal, ingredientes, onClose, onSave, on
         autoFocus
         selectTextOnFocus
       />
+      {unidadG > 0 && (
+        <UnitStepper
+          unidades={grams / unidadG}
+          onChange={(u) => setValue(String(gramosDeUnidades(u, unidadG)))}
+        />
+      )}
 
       {meal && grams > 0 && (
         <View style={styles.preview}>
@@ -103,6 +119,9 @@ export default function EditGramsModal({ meal, ingredientes, onClose, onSave, on
                 P {Math.round(item.proteina)} · C {Math.round(item.carbos)} · G {Math.round(item.grasa)}
               </Text>
             </View>
+            {item.unidad_g > 0 && (
+              <UnitStepper unidades={item.gramos / item.unidad_g} onChange={setItemUnidades(index)} />
+            )}
           </View>
           <TextInput
             style={styles.gramsInput}

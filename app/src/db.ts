@@ -11,6 +11,8 @@ export type Meal = {
   carbs: number;
   fat: number;
   created_at: string;
+  /** Unidades, si la comida es un solo producto con peso por unidad conocido (calculado al leer). */
+  unidades: number | null;
 };
 
 /** Ingrediente de una comida desglosada (lo que devuelve la IA). Valores para sus gramos. */
@@ -23,12 +25,14 @@ export type Ingrediente = {
   proteina: number;
   carbos: number;
   grasa: number;
-  fuente: "ia" | "etiqueta";
+  fuente: "ia" | "etiqueta" | "manual";
+  /** Gramos de una unidad (un huevo, un Kinder Joy…). 0 si no se sabe. */
+  unidad_g: number;
 };
 
 export type NuevoIngrediente = Omit<Ingrediente, "id" | "meal_id">;
 
-export type NewMeal = Omit<Meal, "id" | "created_at"> & { ingredientes?: NuevoIngrediente[] };
+export type NewMeal = Omit<Meal, "id" | "created_at" | "unidades"> & { ingredientes?: NuevoIngrediente[] };
 
 export type Totals = {
   kcal: number;
@@ -37,7 +41,7 @@ export type Totals = {
   fat: number;
 };
 
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
@@ -147,11 +151,28 @@ export async function migrate(db: SQLiteDatabase) {
     version = 7;
   }
 
+  if (version === 7) {
+    // Peso de una unidad, para poder contar por unidades. En lo ya guardado, lo que se apuntó cuenta como una.
+    await db.execAsync(`
+      ALTER TABLE meal_items ADD COLUMN unidad_g REAL NOT NULL DEFAULT 0;
+      UPDATE meal_items SET unidad_g = gramos;
+    `);
+    version = 8;
+  }
+
   await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
 }
 
 export function getMealsByDate(db: SQLiteDatabase, date: string) {
-  return db.getAllAsync<Meal>("SELECT * FROM meals WHERE date = ? ORDER BY created_at ASC, id ASC", date);
+  // Las unidades solo tienen sentido si la comida es un único ingrediente con peso por unidad.
+  return db.getAllAsync<Meal>(
+    `SELECT m.*, (
+      SELECT CASE WHEN COUNT(*) = 1 AND MAX(i.unidad_g) > 0 THEN MAX(i.gramos) / MAX(i.unidad_g) END
+      FROM meal_items i WHERE i.meal_id = m.id
+    ) AS unidades
+    FROM meals m WHERE m.date = ? ORDER BY m.created_at ASC, m.id ASC`,
+    date,
+  );
 }
 
 export async function addMeal(db: SQLiteDatabase, meal: NewMeal) {
@@ -170,7 +191,7 @@ export async function addMeal(db: SQLiteDatabase, meal: NewMeal) {
     id = result.lastInsertRowId;
     for (const i of meal.ingredientes ?? []) {
       await db.runAsync(
-        "INSERT INTO meal_items (meal_id, nombre, gramos, kcal, proteina, carbos, grasa, fuente) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO meal_items (meal_id, nombre, gramos, kcal, proteina, carbos, grasa, fuente, unidad_g) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         id,
         i.nombre,
         i.gramos,
@@ -179,6 +200,7 @@ export async function addMeal(db: SQLiteDatabase, meal: NewMeal) {
         i.carbos,
         i.grasa,
         i.fuente,
+        i.unidad_g,
       );
     }
   });

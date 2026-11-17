@@ -9,6 +9,7 @@ export interface Env {
 type Item = {
 	nombre: string;
 	gramos: number;
+	unidades: number;
 	kcal: number;
 	proteina: number;
 	carbos: number;
@@ -70,6 +71,8 @@ Reglas:
 - Incluye siempre el aceite de cocinar o aliñar si el plato lo lleva normalmente.
 - Bebidas: inclúyelas si las menciona.
 - Valores en gramos cocinados/consumidos, macros en gramos, energía en kcal.
+- "gramos" y los valores son siempre del total del elemento, no de una unidad.
+- "unidades": cuántas unidades o piezas son, si se cuenta por unidades ("2 huevos" → nombre "Huevo", unidades 2, gramos los de los dos). Si no se cuenta por unidades (un plato, aceite, arroz…), 1. Puede ser decimal ("media pizza" → 0.5).
 - Nombres de ingredientes cortos y en español.
 - Si el texto no describe comida o bebida, devuelve "items" vacío.
 Productos de marca o envasados:
@@ -92,6 +95,7 @@ const RESPONSE_SCHEMA = {
 				properties: {
 					nombre: { type: 'STRING' },
 					gramos: { type: 'NUMBER' },
+					unidades: { type: 'NUMBER' },
 					kcal: { type: 'NUMBER' },
 					proteina: { type: 'NUMBER' },
 					carbos: { type: 'NUMBER' },
@@ -100,7 +104,7 @@ const RESPONSE_SCHEMA = {
 					marca: { type: 'STRING' },
 					busqueda: { type: 'STRING' },
 				},
-				required: ['nombre', 'gramos', 'kcal', 'proteina', 'carbos', 'grasa', 'es_producto', 'marca', 'busqueda'],
+				required: ['nombre', 'gramos', 'unidades', 'kcal', 'proteina', 'carbos', 'grasa', 'es_producto', 'marca', 'busqueda'],
 			},
 		},
 	},
@@ -262,6 +266,8 @@ async function analizar(texto: string, apiKey: string) {
 			return {
 				nombre: i.nombre.trim(),
 				gramos: clean(i.gramos, 0),
+				// Sin unidades (o un valor raro) se cuenta como una.
+				unidades: clean(i.unidades, 1) || 1,
 				kcal: clean(i.kcal, 0),
 				proteina: clean(i.proteina),
 				carbos: clean(i.carbos),
