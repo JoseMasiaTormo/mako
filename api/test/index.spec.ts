@@ -131,6 +131,7 @@ describe("/analizar: respuesta correcta", () => {
 					{
 						nombre: "  Huevo frito ",
 						gramos: 120.6,
+						unidades: 2,
 						kcal: 210.4,
 						proteina: 15.26,
 						carbos: -3, // negativo → 0
@@ -154,6 +155,7 @@ describe("/analizar: respuesta correcta", () => {
 						// es_producto true pero sin búsqueda → se trata como no producto
 						nombre: "Yogur",
 						gramos: 125,
+						unidades: -1, // negativo → 1
 						kcal: 70,
 						proteina: 4,
 						carbos: 6,
@@ -175,6 +177,7 @@ describe("/analizar: respuesta correcta", () => {
 				{
 					nombre: "Huevo frito",
 					gramos: 121,
+					unidades: 2,
 					kcal: 210,
 					proteina: 15.3,
 					carbos: 0,
@@ -186,6 +189,7 @@ describe("/analizar: respuesta correcta", () => {
 				{
 					nombre: "Coca-Cola",
 					gramos: 330,
+					unidades: 1,
 					kcal: 139,
 					proteina: 0,
 					carbos: 35,
@@ -197,6 +201,7 @@ describe("/analizar: respuesta correcta", () => {
 				{
 					nombre: "Yogur",
 					gramos: 125,
+					unidades: 1,
 					kcal: 70,
 					proteina: 4,
 					carbos: 6,

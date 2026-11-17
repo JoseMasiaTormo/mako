@@ -22,6 +22,8 @@ import { getDeviceId } from "../device";
 import { prepararFoto } from "../image";
 import FloatingCard from "./FloatingCard";
 import { useUso } from "../hooks/useUso";
+import UnitStepper from "./UnitStepper";
+import { gramosDeUnidades } from "../utils/unidades";
 
 type Props = {
   visible: boolean;
@@ -280,6 +282,13 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const setItemGrams = (index: number) => (value: string) =>
     setItems((prev) => prev.map((it, i) => (i === index ? { ...it, gramosText: value } : it)));
 
+  const setItemUnidades = (index: number) => (unidades: number) =>
+    setItems((prev) =>
+      prev.map((it, i) =>
+        i === index ? { ...it, gramosText: String(gramosDeUnidades(unidades, it.base.unidad_g)) } : it,
+      ),
+    );
+
   const removeItem = (index: number) => setItems((prev) => prev.filter((_, i) => i !== index));
 
   const computed = items.map((it) => scale(it.base, num(it.gramosText)));
@@ -316,6 +325,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
         carbos: i.carbos,
         grasa: i.grasa,
         fuente: i.fuente,
+        unidad_g: i.unidad_g,
       })),
     });
     reset();
@@ -332,26 +342,35 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     // Con gramos se puede pasar a valores por 100 g y guardarlo en Mis productos,
     // para encontrarlo otro día escribiendo su nombre en el modo Automático.
     const gramos = manual.grams ? num(manual.grams) : 0;
+    const kcal = num(manual.kcal);
+    const protein = num(manual.protein);
+    const carbs = num(manual.carbs);
+    const fat = num(manual.fat);
     if (gramos > 0) {
       const f = 100 / gramos;
       saveMiProducto(db, {
         codigo: null,
         nombre,
         marca: "",
-        kcal: num(manual.kcal) * f,
-        proteina: num(manual.protein) * f,
-        carbos: num(manual.carbs) * f,
-        grasa: num(manual.fat) * f,
+        kcal: kcal * f,
+        proteina: protein * f,
+        carbos: carbs * f,
+        grasa: fat * f,
         racion_g: gramos,
       }).catch(() => {});
     }
     onSave({
-      name: manual.name.trim(),
-      grams: manual.grams ? num(manual.grams) : null,
-      kcal: num(manual.kcal),
-      protein: num(manual.protein),
-      carbs: num(manual.carbs),
-      fat: num(manual.fat),
+      name: nombre,
+      grams: gramos > 0 ? gramos : null,
+      kcal,
+      protein,
+      carbs,
+      fat,
+      // Con gramos se guarda como un ingrediente de una unidad, para poder contarla por unidades al editarla.
+      ingredientes:
+        gramos > 0
+          ? [{ nombre, gramos, kcal, proteina: protein, carbos: carbs, grasa: fat, fuente: "manual", unidad_g: gramos }]
+          : undefined,
     });
     reset();
   };
@@ -423,6 +442,9 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
                   P {Math.round(item.proteina)} · C {Math.round(item.carbos)} · G {Math.round(item.grasa)}
                 </Text>
               </View>
+              {item.unidad_g > 0 && (
+                <UnitStepper unidades={item.gramos / item.unidad_g} onChange={setItemUnidades(index)} />
+              )}
             </View>
             <TextInput
               style={styles.gramsInput}

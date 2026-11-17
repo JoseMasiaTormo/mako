@@ -3,6 +3,8 @@ import { API_URL } from "./config";
 export type AiItem = {
   nombre: string;
   gramos: number;
+  /** Gramos de una unidad. Con esto se cuentan las unidades a partir de los gramos. */
+  unidad_g: number;
   kcal: number;
   proteina: number;
   carbos: number;
@@ -131,11 +133,16 @@ export async function analizarComida(texto: string, deviceId: string): Promise<A
     "No se pudo analizar la comida. Inténtalo de nuevo.",
   );
 
-  const items: Omit<AiItem, "fuente">[] = data?.items ?? [];
+  const items: (Omit<AiItem, "fuente" | "unidad_g"> & { unidades?: number })[] = data?.items ?? [];
   if (!items.length) {
     throw new ApiError("No he reconocido ninguna comida en el texto.");
   }
-  return items.map((i) => ({ ...i, fuente: "ia" as const }));
+  // "2 huevos" llega como 120 g y 2 unidades → 1 unidad = 60 g. Sin unidades (Worker antiguo), todo es una.
+  return items.map(({ unidades, ...i }) => ({
+    ...i,
+    unidad_g: i.gramos / (unidades && unidades > 0 ? unidades : 1),
+    fuente: "ia" as const,
+  }));
 }
 
 function numero(v: unknown) {
