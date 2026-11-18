@@ -41,7 +41,7 @@ export type Totals = {
   fat: number;
 };
 
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
@@ -158,6 +158,22 @@ export async function migrate(db: SQLiteDatabase) {
       UPDATE meal_items SET unidad_g = gramos;
     `);
     version = 8;
+  }
+
+  if (version === 8) {
+    // Valores por 100 g de alimentos genéricos (sin marca) que ha estimado la IA. Se guarda la
+    // primera estimación y se reutiliza, para que el mismo alimento dé siempre los mismos valores.
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS alimentos_cache (
+        clave TEXT PRIMARY KEY NOT NULL,
+        kcal REAL NOT NULL,
+        proteina REAL NOT NULL,
+        carbos REAL NOT NULL,
+        grasa REAL NOT NULL,
+        actualizado TEXT NOT NULL
+      );
+    `);
+    version = 9;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
@@ -338,6 +354,30 @@ export function saveCachedProduct(db: SQLiteDatabase, clave: string, p: Producto
     p?.proteina ?? null,
     p?.carbos ?? null,
     p?.grasa ?? null,
+    new Date().toISOString(),
+  );
+}
+
+/** Valores por 100 g de un alimento genérico. */
+export type Valores100g = { kcal: number; proteina: number; carbos: number; grasa: number };
+
+export function getAlimento(db: SQLiteDatabase, clave: string) {
+  return db.getFirstAsync<Valores100g>(
+    "SELECT kcal, proteina, carbos, grasa FROM alimentos_cache WHERE clave = ?",
+    clave,
+  );
+}
+
+/** Guarda los valores de un alimento solo si no estaba ya: manda la primera estimación. */
+export function saveAlimento(db: SQLiteDatabase, clave: string, v: Valores100g) {
+  return db.runAsync(
+    `INSERT OR IGNORE INTO alimentos_cache (clave, kcal, proteina, carbos, grasa, actualizado)
+    VALUES (?, ?, ?, ?, ?, ?)`,
+    clave,
+    v.kcal,
+    v.proteina,
+    v.carbos,
+    v.grasa,
     new Date().toISOString(),
   );
 }

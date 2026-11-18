@@ -132,10 +132,10 @@ describe("/analizar: respuesta correcta", () => {
 						nombre: "  Huevo frito ",
 						gramos: 120.6,
 						unidades: 2,
-						kcal: 210.4,
-						proteina: 15.26,
-						carbos: -3, // negativo → 0
-						grasa: 16.04,
+						kcal_100g: 174.4,
+						proteina_100g: 12.6,
+						carbos_100g: -3, // negativo → 0
+						grasa_100g: 13.26,
 						es_producto: false,
 						marca: "ignorada",
 						busqueda: "ignorada",
@@ -143,10 +143,10 @@ describe("/analizar: respuesta correcta", () => {
 					{
 						nombre: "Coca-Cola",
 						gramos: 330,
-						kcal: 139,
-						proteina: 0,
-						carbos: 35,
-						grasa: 0,
+						kcal_100g: 42,
+						proteina_100g: 0,
+						carbos_100g: 10.6,
+						grasa_100g: 0,
 						es_producto: true,
 						marca: " Coca-Cola ",
 						busqueda: " coca-cola zero ",
@@ -156,16 +156,16 @@ describe("/analizar: respuesta correcta", () => {
 						nombre: "Yogur",
 						gramos: 125,
 						unidades: -1, // negativo → 1
-						kcal: 70,
-						proteina: 4,
-						carbos: 6,
-						grasa: 3,
+						kcal_100g: 56,
+						proteina_100g: 3.2,
+						carbos_100g: 4.8,
+						grasa_100g: 2.4,
 						es_producto: true,
 						marca: "Danone",
 						busqueda: "   ",
 					},
 					// sin nombre → se descarta
-					{ nombre: "  ", gramos: 10, kcal: 10, proteina: 1, carbos: 1, grasa: 1, es_producto: false, marca: "", busqueda: "" },
+					{ nombre: "  ", gramos: 10, kcal_100g: 10, proteina_100g: 1, carbos_100g: 1, grasa_100g: 1, es_producto: false, marca: "", busqueda: "" },
 				],
 			}),
 		);
@@ -178,10 +178,12 @@ describe("/analizar: respuesta correcta", () => {
 					nombre: "Huevo frito",
 					gramos: 121,
 					unidades: 2,
-					kcal: 210,
-					proteina: 15.3,
+					// Totales calculados por el Worker: por 100 g × 1,21.
+					kcal: 211,
+					proteina: 15.2,
 					carbos: 0,
-					grasa: 16,
+					grasa: 16.1,
+					por_100g: { kcal: 174, proteina: 12.6, carbos: 0, grasa: 13.3 },
 					es_producto: false,
 					marca: "",
 					busqueda: "",
@@ -194,6 +196,7 @@ describe("/analizar: respuesta correcta", () => {
 					proteina: 0,
 					carbos: 35,
 					grasa: 0,
+					por_100g: { kcal: 42, proteina: 0, carbos: 10.6, grasa: 0 },
 					es_producto: true,
 					marca: "Coca-Cola",
 					busqueda: "coca-cola zero",
@@ -206,6 +209,7 @@ describe("/analizar: respuesta correcta", () => {
 					proteina: 4,
 					carbos: 6,
 					grasa: 3,
+					por_100g: { kcal: 56, proteina: 3.2, carbos: 4.8, grasa: 2.4 },
 					es_producto: false,
 					marca: "",
 					busqueda: "",
@@ -218,6 +222,9 @@ describe("/analizar: respuesta correcta", () => {
 		expect(llamadasGemini[0].url).toContain("gemini-3.5-flash-lite");
 		const headers = new Headers(llamadasGemini[0].init?.headers);
 		expect(headers.get("x-goog-api-key")).toBe("clave-falsa-de-test");
+		// Temperatura 0 para que la misma comida dé los mismos valores.
+		const enviado = JSON.parse(String(llamadasGemini[0].init?.body));
+		expect(enviado.generationConfig.temperature).toBe(0);
 	});
 });
 
@@ -244,7 +251,7 @@ describe("/analizar: errores de Gemini", () => {
 			{ status: 503 },
 			{ status: 503 },
 			geminiOk({
-				items: [{ nombre: "Lentejas", gramos: 300, kcal: 350, proteina: 20, carbos: 50, grasa: 8, es_producto: false, marca: "", busqueda: "" }],
+				items: [{ nombre: "Lentejas", gramos: 300, kcal_100g: 116, proteina_100g: 9, carbos_100g: 20, grasa_100g: 0.4, es_producto: false, marca: "", busqueda: "" }],
 			}),
 		);
 

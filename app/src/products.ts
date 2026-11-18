@@ -1,6 +1,14 @@
 import { SQLiteDatabase } from "expo-sqlite";
 import { AiItem } from "./api";
-import { getCachedProduct, getMisProductos, MiProducto, saveCachedProduct } from "./db";
+import {
+  getAlimento,
+  getCachedProduct,
+  getMisProductos,
+  MiProducto,
+  saveAlimento,
+  saveCachedProduct,
+  Valores100g,
+} from "./db";
 import { buscarEnOFF, coincideMarca, normalizar, palabras, Producto100g, variantesDistintas } from "./openfoodfacts";
 
 const REINTENTAR_NO_ENCONTRADO_MS = 7 * 24 * 60 * 60 * 1000;
@@ -111,6 +119,42 @@ export function buscarPorNombre(productos: MiProducto[], texto: string): MiProdu
   );
 }
 
+/**
+ * Clave de un alimento genérico en la caché: "Huevos fritos" y "huevo frito" dan la misma.
+ * Sin tildes ni mayúsculas, sin palabras vacías y con los plurales sencillos quitados.
+ */
+export function claveAlimento(nombre: string) {
+  return palabrasClave(nombre)
+    .map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w))
+    .join(" ");
+}
+
+/** Valores por 100 g escalados a unos gramos. */
+function escalar(v: Valores100g, gramos: number) {
+  const f = gramos / 100;
+  return {
+    kcal: Math.round(v.kcal * f),
+    proteina: round1(v.proteina * f),
+    carbos: round1(v.carbos * f),
+    grasa: round1(v.grasa * f),
+  };
+}
+
+/**
+ * Alimento genérico estimado por la IA: si ya se estimó antes, se usan los valores guardados
+ * (escalados a los gramos de ahora). Si es la primera vez, se guardan los que ha dado la IA.
+ */
+async function conAlimentoGuardado(db: SQLiteDatabase, item: AiItem): Promise<AiItem> {
+  const clave = claveAlimento(item.nombre);
+  if (!clave) return item;
+
+  const guardado = await getAlimento(db, clave);
+  if (guardado) return { ...item, ...escalar(guardado, item.gramos), por_100g: guardado };
+
+  if (item.por_100g) await saveAlimento(db, clave, item.por_100g);
+  return item;
+}
+
 async function buscarProducto(db: SQLiteDatabase, marca: string, busqueda: string): Promise<Producto100g | null> {
   const clave = claveDe(marca, busqueda);
   const cached = await getCachedProduct(db, clave);
@@ -146,7 +190,8 @@ function deMisProductos(mio: MiProducto, item: AiItem): AiItem {
 
 /**
  * Productos de marca: Mis productos → caché local → Open Food Facts.
- * Resto: Mis productos, solo si el nombre coincide (comidas creadas a mano).
+ * Resto: Mis productos, solo si el nombre coincide (comidas creadas a mano) → alimentos ya
+ * estimados antes por la IA → lo que ha dicho la IA ahora.
  */
 export async function enriquecerItems(db: SQLiteDatabase, items: AiItem[]): Promise<AiItem[]> {
   const misProductos = await getMisProductos(db).catch(() => []);
@@ -155,7 +200,8 @@ export async function enriquecerItems(db: SQLiteDatabase, items: AiItem[]): Prom
     items.map(async (item) => {
       if (!item.es_producto || !item.busqueda) {
         const mio = buscarPorNombre(misProductos, item.nombre);
-        return mio ? { ...item, ...deMisProductos(mio, item), es_producto: false } : item;
+        if (mio) return { ...item, ...deMisProductos(mio, item), es_producto: false };
+        return conAlimentoGuardado(db, item).catch(() => item);
       }
 
       try {

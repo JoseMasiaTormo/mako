@@ -1,4 +1,5 @@
 import { API_URL } from "./config";
+import type { Valores100g } from "./db";
 
 export type AiItem = {
   nombre: string;
@@ -13,6 +14,8 @@ export type AiItem = {
   marca: string;
   busqueda: string;
   fuente: "ia" | "etiqueta";
+  /** Valores por 100 g que ha dado la IA (Worker nuevo). Sirven para guardar el alimento en caché. */
+  por_100g?: Valores100g;
 };
 
 /** Valores leídos de la foto de una etiqueta (por 100 g). */
@@ -133,21 +136,37 @@ export async function analizarComida(texto: string, deviceId: string): Promise<A
     "No se pudo analizar la comida. Inténtalo de nuevo.",
   );
 
-  const items: (Omit<AiItem, "fuente" | "unidad_g"> & { unidades?: number })[] = data?.items ?? [];
+  const items: (Omit<AiItem, "fuente" | "unidad_g" | "por_100g"> & { unidades?: number; por_100g?: unknown })[] =
+    data?.items ?? [];
   if (!items.length) {
     throw new ApiError("No he reconocido ninguna comida en el texto.");
   }
   // "2 huevos" llega como 120 g y 2 unidades → 1 unidad = 60 g. Sin unidades (Worker antiguo), todo es una.
-  return items.map(({ unidades, ...i }) => ({
+  return items.map(({ unidades, por_100g, ...i }) => ({
     ...i,
     unidad_g: i.gramos / (unidades && unidades > 0 ? unidades : 1),
     fuente: "ia" as const,
+    por_100g: leerValores100g(por_100g),
   }));
 }
 
 function numero(v: unknown) {
   return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
 }
+
+function esNumero(v: unknown) {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0;
+}
+
+/** Valores por 100 g del Worker, o undefined si no vienen (Worker antiguo) o son raros. */
+function leerValores100g(v: unknown): Valores100g | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const { kcal, proteina, carbos, grasa } = v as Record<string, unknown>;
+  if (![kcal, proteina, carbos, grasa].every(esNumero)) return undefined;
+  if ((kcal as number) > 950) return undefined;
+  return { kcal, proteina, carbos, grasa } as Valores100g;
+}
+
 
 /** Manda la foto (JPEG en base64) al Worker, que la lee con Gemini. */
 export async function leerEtiqueta(imagenBase64: string, deviceId: string): Promise<EtiquetaLeida> {

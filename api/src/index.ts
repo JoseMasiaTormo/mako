@@ -14,6 +14,24 @@ type Item = {
 	proteina: number;
 	carbos: number;
 	grasa: number;
+	/** Valores por 100 g (o 100 ml). Los totales de arriba se calculan a partir de ellos. */
+	por_100g: Valores;
+	es_producto: boolean;
+	marca: string;
+	busqueda: string;
+};
+
+type Valores = { kcal: number; proteina: number; carbos: number; grasa: number };
+
+// Lo que devuelve Gemini por cada elemento: valores por 100 g, no del total.
+type ItemGemini = {
+	nombre: string;
+	gramos: number;
+	unidades: number;
+	kcal_100g: number;
+	proteina_100g: number;
+	carbos_100g: number;
+	grasa_100g: number;
 	es_producto: boolean;
 	marca: string;
 	busqueda: string;
@@ -70,10 +88,10 @@ Reglas:
 - Si el usuario indica cantidad ("2 huevos", "media pizza", "200 g"), respétala.
 - Incluye siempre el aceite de cocinar o aliñar si el plato lo lleva normalmente.
 - Bebidas: inclúyelas si las menciona.
-- Valores en gramos cocinados/consumidos, macros en gramos, energía en kcal.
-- "gramos" y los valores son siempre del total del elemento, no de una unidad.
+- "gramos" es el peso cocinado/consumido del total del elemento, no de una unidad (en bebidas, ml).
+- kcal_100g, proteina_100g, carbos_100g y grasa_100g son los valores POR 100 g (o 100 ml) del alimento tal y como se come, no del total. Usa los valores de referencia habituales de las tablas de composición de alimentos españolas (BEDCA). Para el mismo alimento da siempre los mismos valores.
 - "unidades": cuántas unidades o piezas son, si se cuenta por unidades ("2 huevos" → nombre "Huevo", unidades 2, gramos los de los dos). Si no se cuenta por unidades (un plato, aceite, arroz…), 1. Puede ser decimal ("media pizza" → 0.5).
-- Nombres de ingredientes cortos y en español.
+- Nombres de ingredientes cortos, en español y en singular. Usa siempre el mismo nombre para el mismo alimento (ej: siempre "Pechuga de pollo", no a veces "Pollo (pechuga)"). Añade la forma de cocinarlo solo si cambia sus valores (ej: "Patata frita" frente a "Patata cocida").
 - Si el texto no describe comida o bebida, devuelve "items" vacío.
 Productos de marca o envasados:
 - Si un elemento es un producto envasado o de una marca concreta (menciona una marca o supermercado: Hacendado, Mercadona, Lidl, Carrefour, Danone, Doritos, Coca-Cola, etc.), pon es_producto = true. No lo separes en ingredientes: es un único elemento.
@@ -96,15 +114,15 @@ const RESPONSE_SCHEMA = {
 					nombre: { type: 'STRING' },
 					gramos: { type: 'NUMBER' },
 					unidades: { type: 'NUMBER' },
-					kcal: { type: 'NUMBER' },
-					proteina: { type: 'NUMBER' },
-					carbos: { type: 'NUMBER' },
-					grasa: { type: 'NUMBER' },
+					kcal_100g: { type: 'NUMBER' },
+					proteina_100g: { type: 'NUMBER' },
+					carbos_100g: { type: 'NUMBER' },
+					grasa_100g: { type: 'NUMBER' },
 					es_producto: { type: 'BOOLEAN' },
 					marca: { type: 'STRING' },
 					busqueda: { type: 'STRING' },
 				},
-				required: ['nombre', 'gramos', 'unidades', 'kcal', 'proteina', 'carbos', 'grasa', 'es_producto', 'marca', 'busqueda'],
+				required: ['nombre', 'gramos', 'unidades', 'kcal_100g', 'proteina_100g', 'carbos_100g', 'grasa_100g', 'es_producto', 'marca', 'busqueda'],
 			},
 		},
 	},
@@ -247,12 +265,13 @@ async function generarJson<T>(req: GeminiRequest, apiKey: string): Promise<{ dat
 }
 
 async function analizar(texto: string, apiKey: string) {
-	const result = await generarJson<{ items?: Item[] }>(
+	const result = await generarJson<{ items?: ItemGemini[] }>(
 		{
 			systemPrompt: SYSTEM_PROMPT,
 			parts: [{ text: texto }],
 			schema: RESPONSE_SCHEMA,
-			temperature: 0.2,
+			// 0 para que el mismo texto dé (casi siempre) los mismos valores.
+			temperature: 0,
 			maxOutputTokens: 1024,
 		},
 		apiKey,
@@ -263,15 +282,25 @@ async function analizar(texto: string, apiKey: string) {
 		.filter((i) => i && typeof i.nombre === 'string' && i.nombre.trim())
 		.map((i) => {
 			const esProducto = i.es_producto === true && !!cleanText(i.busqueda);
+			const gramos = clean(i.gramos, 0);
+			const por100g: Valores = {
+				kcal: clean(i.kcal_100g, 0),
+				proteina: clean(i.proteina_100g),
+				carbos: clean(i.carbos_100g),
+				grasa: clean(i.grasa_100g),
+			};
+			// Los totales se calculan aquí, no los hace la IA: así 200 g son siempre el doble que 100 g.
+			const f = gramos / 100;
 			return {
 				nombre: i.nombre.trim(),
-				gramos: clean(i.gramos, 0),
+				gramos,
 				// Sin unidades (o un valor raro) se cuenta como una.
 				unidades: clean(i.unidades, 1) || 1,
-				kcal: clean(i.kcal, 0),
-				proteina: clean(i.proteina),
-				carbos: clean(i.carbos),
-				grasa: clean(i.grasa),
+				kcal: clean(por100g.kcal * f, 0),
+				proteina: clean(por100g.proteina * f),
+				carbos: clean(por100g.carbos * f),
+				grasa: clean(por100g.grasa * f),
+				por_100g: por100g,
 				es_producto: esProducto,
 				marca: esProducto ? cleanText(i.marca) : '',
 				busqueda: esProducto ? cleanText(i.busqueda) : '',

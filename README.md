@@ -81,6 +81,7 @@ El proyecto es un **monorepo** con dos piezas:
 - Si no indicas cantidad, usa la ración normal de un adulto en España.
 - Respeta las cantidades que digas: *"2 huevos"*, *"media pizza"*, *"200 g"*.
 - Incluye el **aceite** de cocinar o aliñar cuando el plato lo lleva (el gran olvidado 👀).
+- **Mismo alimento, mismos valores**: la primera estimación de cada alimento se guarda y se reutiliza, así que *"200 g de pechuga de pollo"* da hoy lo mismo que mañana.
 
 </td>
 <td width="50%" valign="top">
@@ -132,7 +133,7 @@ El proyecto es un **monorepo** con dos piezas:
 - Navega por días: **Hoy, Ayer, Mañana** y cualquier fecha.
 - Totales del día: **kcal, proteína, carbos y grasa**.
 - Todo se guarda **en el dispositivo** con SQLite (WAL).
-- Caché local de productos: menos peticiones y respuestas más rápidas.
+- Caché local de productos y de alimentos estimados: menos peticiones y valores que no cambian de un día a otro.
 
 </td>
 </tr>
@@ -151,6 +152,7 @@ flowchart LR
         UI[AddMealModal] --> PROD[products.ts<br/>orquestador]
         PROD --> MIS[(SQLite<br/>mis_productos)]
         PROD --> CACHE[(SQLite<br/>products_cache)]
+        PROD --> ALI[(SQLite<br/>alimentos_cache)]
         UI --> DB[(SQLite<br/>meals · settings)]
         UI --> IMG[image.ts<br/>1024 px · JPEG 0.7]
     end
@@ -184,9 +186,22 @@ sequenceDiagram
     👤->>📱: "yogur griego Hacendado y tostada con aceite"
     📱->>⚡: POST /analizar { texto } + X-Device-Id
     ⚡->>⚡: comprueba el límite diario (D1)
-    ⚡->>🤖: prompt nutricionista + responseSchema
-    🤖-->>⚡: items[] (con es_producto, marca, busqueda)
-    ⚡-->>📱: items[] saneados y redondeados
+    ⚡->>🤖: prompt nutricionista + responseSchema (temperature 0)
+    🤖-->>⚡: items[] con valores por 100 g (y es_producto, marca, busqueda)
+    ⚡->>⚡: calcula los totales: por 100 g × gramos
+    ⚡-->>📱: items[] saneados, con totales y por_100g
+    loop por cada alimento sin marca
+        📱->>💾: ¿está en Mis productos (mismo nombre)?
+        alt no
+            📱->>💾: ¿está en alimentos_cache?
+            alt sí
+                💾-->>📱: valores por 100 g guardados
+                📱->>📱: escala a los gramos de ahora
+            else primera vez
+                📱->>💾: guarda los valores por 100 g de la IA
+            end
+        end
+    end
     loop por cada producto de marca
         📱->>💾: ¿está en Mis productos?
         alt sí
@@ -242,6 +257,21 @@ const MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
 Cada modelo se intenta **2 veces** con backoff (500 ms, 1000 ms) cuando hay errores `500/503/504`. Si todo falla, devuelve un error legible (`saturado`, `cuota`, `ia`) que la app traduce a mensajes en español.
 
 La respuesta de Gemini se fuerza con `responseMimeType: application/json` + `responseSchema` y luego se **sanea**: los números negativos o no finitos pasan a 0, se redondea y `marca`/`busqueda` quedan vacíos si no es un producto.
+
+</details>
+
+<details>
+<summary><b>🎯 Mismo alimento, mismos valores</b></summary>
+
+<br/>
+
+Un modelo de IA no siempre responde lo mismo: *"200 g de pechuga de pollo"* podía dar 220 kcal un día y 330 al siguiente. Para evitarlo hay tres capas:
+
+1. **`temperature: 0`** en `/analizar`, para que el modelo sea lo más determinista posible.
+2. **La IA da valores por 100 g, no totales.** El Worker hace la multiplicación por los gramos, así que 300 g son siempre 1,5 veces 200 g. El prompt pide además valores de referencia de las tablas españolas (BEDCA) y nombres siempre iguales para el mismo alimento.
+3. **Caché local de alimentos genéricos** (`alimentos_cache`). La primera vez que se estima un alimento sin marca, la app guarda sus valores por 100 g. Las siguientes veces usa esos valores aunque la IA diga otra cosa. La clave se normaliza (sin tildes, mayúsculas, palabras vacías ni plurales sencillos), así que *"Huevos"* y *"huevo"* son el mismo alimento.
+
+Orden de prioridad para un alimento sin marca: **Mis productos** (si el nombre coincide) → **alimentos_cache** → estimación de la IA. Si una estimación guardada no te convence, crea el alimento en modo manual con sus gramos: se guarda en *Mis productos* y tiene prioridad.
 
 </details>
 
@@ -305,6 +335,10 @@ SQLite con `PRAGMA user_version` para migrar sin perder datos:
 | `3` | Tabla `products_cache` |
 | `4` | Limpieza de la caché tras mejorar el matching |
 | `5` | Tabla `mis_productos` (código de barras `UNIQUE`, valores por 100 g, ración) |
+| `6` | Tabla `water` (agua bebida por día) |
+| `7` | Tabla `meal_items` (desglose de cada comida, para editar los ingredientes) |
+| `8` | Columna `unidad_g` en `meal_items` (contar por unidades) |
+| `9` | Tabla `alimentos_cache` (valores por 100 g de alimentos genéricos ya estimados) |
 
 La caché guarda también los **"no encontrados"**, que se reintentan pasados **7 días** para no saturar Open Food Facts.
 
@@ -326,7 +360,7 @@ mako/
 │       ├── device.ts               # ID de instalación (UUID)
 │       ├── image.ts                # Reducción y compresión de fotos
 │       ├── openfoodfacts.ts        # Búsqueda por texto y por código en OFF
-│       ├── products.ts             # Orquestador: Mis productos + caché + OFF
+│       ├── products.ts             # Orquestador: Mis productos + cachés + OFF
 │       ├── theme.ts                # Paleta de colores
 │       ├── utils/date.ts           # Claves de fecha y etiquetas en español
 │       ├── components/
@@ -404,7 +438,8 @@ Los tests se ejecutan dentro del runtime de Workers (`@cloudflare/vitest-plugin`
 
 - Rutas, métodos y validaciones (texto vacío o largo, `X-Device-Id` ausente o mal formado).
 - Que **no se llame a Gemini** cuando falla una validación.
-- Saneado de los items devueltos.
+- Saneado de los items devueltos y **cálculo de los totales a partir de los valores por 100 g**.
+- Que `/analizar` use **`temperature: 0`**.
 - Reintentos, **fallback al modelo de reserva** y errores `saturado` / `cuota`.
 - **Límite diario** por dispositivo.
 - `/etiqueta`: base64 inválido, foto ilegible, **conversión de kJ** y valores imposibles.
@@ -463,10 +498,12 @@ Todas las rutas son `POST`, reciben JSON y necesitan la cabecera **`X-Device-Id`
     {
       "nombre": "Yogur griego",
       "gramos": 125,
+      "unidades": 1,
       "kcal": 150,
       "proteina": 4.5,
       "carbos": 5.1,
       "grasa": 12.5,
+      "por_100g": { "kcal": 120, "proteina": 3.6, "carbos": 4.1, "grasa": 10 },
       "es_producto": true,
       "marca": "Hacendado",
       "busqueda": "yogur griego"
@@ -474,10 +511,12 @@ Todas las rutas son `POST`, reciben JSON y necesitan la cabecera **`X-Device-Id`
     {
       "nombre": "Pan tostado",
       "gramos": 60,
+      "unidades": 2,
       "kcal": 160,
       "proteina": 5.4,
       "carbos": 30,
       "grasa": 1.2,
+      "por_100g": { "kcal": 267, "proteina": 9, "carbos": 50, "grasa": 2 },
       "es_producto": false,
       "marca": "",
       "busqueda": ""
@@ -486,7 +525,7 @@ Todas las rutas son `POST`, reciben JSON y necesitan la cabecera **`X-Device-Id`
 }
 ```
 
-> Los valores son ilustrativos: dependen de lo que estime el modelo.
+> Los valores son ilustrativos: dependen de lo que estime el modelo. Gemini devuelve solo los valores **por 100 g** (`por_100g`) y el Worker calcula los totales (`kcal`, `proteina`…) multiplicando por los gramos. `unidades` es cuántas piezas son (*"2 huevos"* → 2).
 
 ### `POST /etiqueta`
 
