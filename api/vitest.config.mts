@@ -25,6 +25,8 @@ export default defineConfig({
 					GEMINI_API_KEY: "clave-falsa-de-test",
 					// Límite pequeño para no tener que hacer 50 peticiones en el test.
 					LIMITE_DISPOSITIVO: "3",
+					// Bloque de anuncios de prueba de Google: las recompensas deben venir de él.
+					ADMOB_REWARDED_AD_UNIT: "ca-app-pub-3940256099942544/5224354917",
 					TEST_MIGRATIONS: migrations,
 				},
 			},

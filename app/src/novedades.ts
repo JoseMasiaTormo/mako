@@ -12,6 +12,14 @@ export type Novedad = {
  */
 export const NOVEDADES: Novedad[] = [
   {
+    version: "1.5.0",
+    cambios: [
+      "Mako estrena logo: un nuevo icono con los colores de siempre.",
+      "Ahora puedes dictar lo que has comido: en el modo Automático, pulsa el micrófono, dilo en voz alta y el texto aparecerá solo. Revísalo y pulsa Analizar. La primera vez te pedirá permiso para usar el micrófono.",
+      "El límite diario de análisis con IA pasa a ser de 8. Si te quedas sin ellos, puedes ver un anuncio para conseguir 5 más. Cuando los gastes, podrás volver a ver otro.",
+    ],
+  },
+  {
     version: "1.4.0",
     cambios: [
       "Ahora puedes contar por unidades: pulsa + o − para cambiar cuántos te has comido (2 huevos, 3 galletas…) y los gramos, las kcal y las macros se ajustan solos. Funciona al añadir una comida y al editarla, también en cada ingrediente.",

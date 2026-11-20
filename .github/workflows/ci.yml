@@ -1,0 +1,84 @@
+name: CI
+
+# Comprobaciones rápidas (unos minutos) para detectar errores antes de
+# generar el AAB y subirlo a Google Play. También las usa android-aab.yml.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main] # en main ya las lanza android-aab.yml
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App (Expo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx expo lint
+        continue-on-error: true # TODO: quitar cuando se arreglen los errores actuales
+
+      - name: Expo doctor
+        run: npx expo-doctor
+        continue-on-error: true # TODO: quitar cuando se actualicen los parches del SDK
+
+      - name: Play Store checks (app.json, versions, icons)
+        run: node scripts/check-play-store.js
+
+      - name: Bundle JS for Android
+        run: npx expo export --platform android --output-dir ${{ runner.temp }}/expo-export
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Play Store checks (AndroidManifest)
+        run: node scripts/check-play-store.js --manifest
+
+  api:
+    name: API (Worker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npx vitest run

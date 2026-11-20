@@ -1,17 +1,21 @@
 {
   "name": "mako",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "main": "index.ts",
   "dependencies": {
     "expo": "~58.0.21",
+    "expo-build-properties": "~58.0.12",
     "expo-camera": "~58.0.14",
     "expo-crypto": "~58.0.7",
+    "expo-dev-client": "~58.0.21",
     "expo-image-manipulator": "~58.0.16",
     "expo-notifications": "~58.1.8",
+    "expo-speech-recognition": "^58.0.1",
     "expo-sqlite": "~58.0.14",
     "expo-status-bar": "~58.0.4",
     "react": "19.3.0",
     "react-native": "0.88.1",
+    "react-native-google-mobile-ads": "^17.4.0",
     "react-native-safe-area-context": "~5.10.1"
   },
   "devDependencies": {

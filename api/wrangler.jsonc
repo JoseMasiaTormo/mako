@@ -35,7 +35,10 @@
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
-	// "vars": {  "MY_VARIABLE": "production_value" }
+	"vars": {
+		// Solo se aceptan recompensas (/recompensa) de este bloque de anuncios bonificados.
+		"ADMOB_REWARDED_AD_UNIT": "ca-app-pub-4090545321775886/4854388650",
+	},
 	/**
 	 * Static Assets
 	 * https://developers.cloudflare.com/workers/static-assets/binding/

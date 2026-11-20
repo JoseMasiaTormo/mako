@@ -1,5 +1,5 @@
 // src/components/AddMealModal.tsx
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,9 @@ import { prepararFoto } from "../image";
 import FloatingCard from "./FloatingCard";
 import { useUso } from "../hooks/useUso";
 import UnitStepper from "./UnitStepper";
+import MicButton from "./MicButton";
+import RecargaAnuncio from "./RecargaAnuncio";
+import { useDictado } from "../hooks/useDictado";
 import { gramosDeUnidades } from "../utils/unidades";
 
 type Props = {
@@ -32,6 +35,8 @@ type Props = {
 };
 
 type Mode = "auto" | "manual";
+
+const MAX_TEXTO = 300;
 type EditableItem = { base: AiItem; gramosText: string };
 
 const emptyManual = { name: "", grams: "", kcal: "", protein: "", carbs: "", fat: "" };
@@ -132,7 +137,19 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const db = useSQLiteContext();
   const uso = useUso(db, visible);
 
+  // Dictado por voz: lo que se dice se añade detrás de lo que ya estuviera escrito.
+  const textoAntesDeDictar = useRef("");
+  const dictado = useDictado((dicho) => {
+    const antes = textoAntesDeDictar.current.trim();
+    setTexto((antes ? `${antes} ${dicho}` : dicho).slice(0, MAX_TEXTO));
+  });
+  const alternarDictado = () => {
+    if (!dictado.escuchando) textoAntesDeDictar.current = texto;
+    dictado.alternar();
+  };
+
   const reset = () => {
+    dictado.cancelar();
     setMode("auto");
     setTexto("");
     setItems([]);
@@ -379,12 +396,21 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     if (!uso) return null;
     const agotado = uso.restantes <= 0;
     const pocas = uso.restantes <= 3;
+    // Sin análisis y con un Worker que admite recargas: se ofrece ver un anuncio.
+    const recargable = agotado && !!uso.recarga;
     return (
-      <Text style={[styles.restantes, pocas && styles.restantesPocas, agotado && styles.restantesAgotado, style]}>
-        {agotado
-          ? `Sin análisis con IA hasta mañana (0/${uso.limite})`
-          : `Te quedan ${uso.restantes}/${uso.limite} análisis con IA hoy`}
-      </Text>
+      <>
+        <Text style={[styles.restantes, pocas && styles.restantesPocas, agotado && styles.restantesAgotado, style]}>
+          {agotado
+            ? recargable
+              ? "No te quedan análisis con IA hoy"
+              : `Sin análisis con IA hasta mañana (0/${uso.limite})`
+            : uso.recargado
+              ? `Te quedan ${uso.restantes}/${uso.limite} análisis de la recarga`
+              : `Te quedan ${uso.restantes}/${uso.limite} análisis con IA hoy`}
+        </Text>
+        {recargable && <RecargaAnuncio db={db} recarga={uso.recarga!} />}
+      </>
     );
   };
 
@@ -392,17 +418,29 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     if (!items.length) {
       return (
         <>
-          <TextInput
-            style={[styles.input, styles.textarea]}
-            value={texto}
-            onChangeText={setTexto}
-            placeholder="Ej: plato de garbanzos con pollo y una caña"
-            placeholderTextColor={colors.muted}
-            multiline
-            maxLength={300}
-            editable={!loading}
-          />
-          <Text style={styles.hint}>Los valores son estimaciones aproximadas.</Text>
+          <View>
+            <TextInput
+              style={[styles.input, styles.textarea, styles.textareaConMic]}
+              value={texto}
+              onChangeText={setTexto}
+              placeholder={
+                dictado.escuchando ? "Te escucho…" : "Ej: plato de garbanzos con pollo y una caña"
+              }
+              placeholderTextColor={colors.muted}
+              multiline
+              maxLength={MAX_TEXTO}
+              editable={!loading && !dictado.escuchando}
+            />
+            <View style={styles.micPos}>
+              <MicButton escuchando={dictado.escuchando} onPress={alternarDictado} disabled={loading} />
+            </View>
+          </View>
+          {dictado.aviso && <Text style={styles.micAviso}>{dictado.aviso}</Text>}
+          <Text style={styles.hint}>
+            {dictado.escuchando
+              ? "Di lo que has comido. Pulsa otra vez el micrófono para terminar."
+              : "Los valores son estimaciones aproximadas."}
+          </Text>
           {renderRestantes()}
           <Pressable
             style={[styles.scanButton, loading && styles.disabled]}
@@ -416,9 +454,9 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
               <Text style={styles.cancelText}>Cancelar</Text>
             </Pressable>
             <Pressable
-              style={[styles.button, styles.save, (!texto.trim() || loading) && styles.disabled]}
+              style={[styles.button, styles.save, (!texto.trim() || loading || dictado.escuchando) && styles.disabled]}
               onPress={analizar}
-              disabled={!texto.trim() || loading}
+              disabled={!texto.trim() || loading || dictado.escuchando}
             >
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Analizar</Text>}
             </Pressable>
@@ -665,6 +703,9 @@ const makeStyles = (colors: Colors) =>
       color: colors.text,
     },
     textarea: { minHeight: 90, textAlignVertical: "top" },
+    textareaConMic: { paddingRight: 56 },
+    micPos: { position: "absolute", right: 8, bottom: 8 },
+    micAviso: { fontSize: 13, color: colors.danger, marginTop: 6 },
     hint: { fontSize: 12, color: colors.muted, marginTop: 6 },
     restantes: { fontSize: 12, color: colors.muted, marginTop: 4, fontWeight: "600" },
     restantesPocas: { color: "#D97706" },

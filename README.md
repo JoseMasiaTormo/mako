@@ -284,7 +284,8 @@ Para que nadie se coma la cuota de Gemini, cada instalación genera un **UUID** 
 
 - Rechaza las peticiones sin ID o con un ID mal formado (`400 sin_dispositivo`) **antes** de llamar a la IA.
 - Cuenta las peticiones de cada día en **Cloudflare D1** con un único `INSERT … ON CONFLICT … RETURNING`, en batch junto al contador global.
-- Corta con `429 limite_diario` al pasar de **15 análisis por dispositivo y día**, y con `429 servicio_lleno` al pasar de **1000 en total**.
+- Corta con `429 limite_diario` al pasar de **8 análisis por dispositivo y día**, y con `429 servicio_lleno` al pasar de **1000 en total**.
+- Con los análisis agotados, ver un anuncio bonificado de AdMob da **5 más**. AdMob avisa a `GET /recompensa` (verificación en servidor, firma ECDSA) y el Worker solo recarga si quedaban 0; cada `transaction_id` cuenta una vez.
 - Los límites se pueden cambiar con las variables `LIMITE_DISPOSITIVO` y `LIMITE_GLOBAL`.
 
 Cuando se llega al límite, la app propone escanear el código de barras o meter la comida a mano, porque esas opciones no gastan IA.
