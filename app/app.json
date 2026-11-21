@@ -19,7 +19,8 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "com.google.android.gms.permission.AD_ID"
       ]
     },
     "web": {
@@ -47,10 +48,7 @@
         {
           "microphonePermission": "Mako usa el micrófono para que puedas decir lo que has comido en el modo Automático.",
           "speechRecognitionPermission": "Mako pasa tu voz a texto para que puedas decir lo que has comido en el modo Automático.",
-          "androidSpeechServicePackages": [
-            "com.google.android.googlequicksearchbox",
-            "com.google.android.tts"
-          ]
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox", "com.google.android.tts"]
         }
       ],
       [
