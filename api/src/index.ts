@@ -4,6 +4,9 @@ export interface Env {
 	// Opcionales: si no se definen se usan LIMITE_DISPOSITIVO / LIMITE_GLOBAL. Sirven sobre todo para los tests.
 	LIMITE_DISPOSITIVO?: string;
 	LIMITE_GLOBAL?: string;
+	// ID del bloque de anuncios bonificados de AdMob (ca-app-pub-XXX/YYY). Si está definido,
+	// solo se aceptan recompensas de ese bloque. Ver rutaRecompensa.
+	ADMOB_REWARDED_AD_UNIT?: string;
 }
 
 type Item = {
@@ -41,7 +44,9 @@ const MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
 const RETRY_STATUS = [500, 503, 504];
 const MAX_LENGTH = 300;
 
-const LIMITE_DISPOSITIVO = 15;
+const LIMITE_DISPOSITIVO = 8;
+// Peticiones extra que da ver un anuncio bonificado, solo cuando ya no quedan.
+const RECARGA_ANUNCIO = 5;
 const LIMITE_GLOBAL = 1000;
 const DEVICE_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -54,8 +59,10 @@ const KJ_POR_KCAL = 4.184;
 const SQL_SUMAR = `
 	INSERT INTO uso_diario (device_id, dia, peticiones) VALUES (?, ?, 1)
 	ON CONFLICT(device_id, dia) DO UPDATE SET peticiones = peticiones + 1
-	RETURNING peticiones
+	RETURNING peticiones, extra
 `;
+
+type Uso = { usadas: number; extra: number };
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 
@@ -63,21 +70,24 @@ async function registrarUso(db: D1Database, deviceId: string) {
 	const dia = hoy();
 	const stmt = db.prepare(SQL_SUMAR);
 
-	const [dispositivo, total] = await db.batch<{ peticiones: number }>([stmt.bind(deviceId, dia), stmt.bind('__total__', dia)]);
+	const [dispositivo, total] = await db.batch<{ peticiones: number; extra: number }>([
+		stmt.bind(deviceId, dia),
+		stmt.bind('__total__', dia),
+	]);
 
 	return {
-		usadasDispositivo: dispositivo.results[0]?.peticiones ?? 0,
+		dispositivo: { usadas: dispositivo.results[0]?.peticiones ?? 0, extra: dispositivo.results[0]?.extra ?? 0 },
 		usadasTotal: total.results[0]?.peticiones ?? 0,
 	};
 }
 
 // Lee cuántas peticiones lleva hoy un dispositivo, sin sumar ninguna.
-async function consultarUso(db: D1Database, deviceId: string) {
+async function consultarUso(db: D1Database, deviceId: string): Promise<Uso> {
 	const fila = await db
-		.prepare('SELECT peticiones FROM uso_diario WHERE device_id = ? AND dia = ?')
+		.prepare('SELECT peticiones, extra FROM uso_diario WHERE device_id = ? AND dia = ?')
 		.bind(deviceId, hoy())
-		.first<{ peticiones: number }>();
-	return fila?.peticiones ?? 0;
+		.first<{ peticiones: number; extra: number }>();
+	return { usadas: fila?.peticiones ?? 0, extra: fila?.extra ?? 0 };
 }
 
 const SYSTEM_PROMPT = `Eres un nutricionista que estima calorías y macronutrientes de comidas españolas.
@@ -360,32 +370,52 @@ function limiteDispositivo(env: Env) {
 	return leerLimite(env.LIMITE_DISPOSITIVO, LIMITE_DISPOSITIVO);
 }
 
-function restantes(usadas: number, env: Env) {
-	return Math.max(0, limiteDispositivo(env) - usadas);
+/** Límite de hoy del dispositivo: el diario más lo recargado viendo anuncios. */
+function limiteDeHoy(uso: Uso, env: Env) {
+	return limiteDispositivo(env) + uso.extra;
+}
+
+function restantes(uso: Uso, env: Env) {
+	return Math.max(0, limiteDeHoy(uso, env) - uso.usadas);
+}
+
+/**
+ * Lo que ve el usuario: el límite diario, o tras ver un anuncio la recarga ("3/5 de la recarga").
+ * Con un solo anuncio a la vez (solo se recarga con 0 restantes), lo que queda es siempre de la última.
+ */
+function usoVisible(uso: Uso, env: Env) {
+	const recargado = uso.extra > 0;
+	return {
+		limite: recargado ? RECARGA_ANUNCIO : limiteDispositivo(env),
+		restantes: restantes(uso, env),
+		recargado,
+	};
 }
 
 // Añade a la respuesta cuántas peticiones le quedan hoy al dispositivo.
-function conRestantes(res: Response, usadas: number, env: Env) {
-	res.headers.set('X-Peticiones-Restantes', String(restantes(usadas, env)));
-	res.headers.set('X-Peticiones-Limite', String(limiteDispositivo(env)));
+function conRestantes(res: Response, uso: Uso, env: Env) {
+	const v = usoVisible(uso, env);
+	res.headers.set('X-Peticiones-Restantes', String(v.restantes));
+	res.headers.set('X-Peticiones-Limite', String(v.limite));
+	res.headers.set('X-Peticiones-Recargado', v.recargado ? '1' : '0');
 	return res;
 }
 
-function limiteSuperado(uso: { usadasDispositivo: number; usadasTotal: number }, env: Env) {
+function limiteSuperado(uso: { dispositivo: Uso; usadasTotal: number }, env: Env) {
 	const limiteGlobal = leerLimite(env.LIMITE_GLOBAL, LIMITE_GLOBAL);
-	const limite = limiteDispositivo(env);
 	if (uso.usadasTotal > limiteGlobal) {
 		return json({ error: 'servicio_lleno' }, 429);
 	}
-	if (uso.usadasDispositivo > limite) {
-		return json({ error: 'limite_diario', limite }, 429);
+	if (uso.dispositivo.usadas > limiteDeHoy(uso.dispositivo, env)) {
+		// "recarga": cuántas da un anuncio. La app ofrece verlo al recibir este error.
+		return json({ error: 'limite_diario', limite: limiteDeHoy(uso.dispositivo, env), recarga: RECARGA_ANUNCIO }, 429);
 	}
 	return null;
 }
 
 async function rutaUso(env: Env, deviceId: string) {
-	const usadas = await consultarUso(env.DB, deviceId);
-	return json({ limite: limiteDispositivo(env), restantes: restantes(usadas, env) });
+	const uso = await consultarUso(env.DB, deviceId);
+	return json({ ...usoVisible(uso, env), recarga: RECARGA_ANUNCIO });
 }
 
 async function rutaAnalizar(request: Request, env: Env, deviceId: string) {
@@ -402,12 +432,12 @@ async function rutaAnalizar(request: Request, env: Env, deviceId: string) {
 
 	const uso = await registrarUso(env.DB, deviceId);
 	const limite = limiteSuperado(uso, env);
-	if (limite) return conRestantes(limite, uso.usadasDispositivo, env);
+	if (limite) return conRestantes(limite, uso.dispositivo, env);
 
 	const result = await analizar(texto, env.GEMINI_API_KEY);
-	if ('error' in result) return conRestantes(json({ error: result.error }, result.status), uso.usadasDispositivo, env);
+	if ('error' in result) return conRestantes(json({ error: result.error }, result.status), uso.dispositivo, env);
 
-	return conRestantes(json(result), uso.usadasDispositivo, env);
+	return conRestantes(json(result), uso.dispositivo, env);
 }
 
 async function rutaEtiqueta(request: Request, env: Env, deviceId: string) {
@@ -433,18 +463,158 @@ async function rutaEtiqueta(request: Request, env: Env, deviceId: string) {
 
 	const uso = await registrarUso(env.DB, deviceId);
 	const limite = limiteSuperado(uso, env);
-	if (limite) return conRestantes(limite, uso.usadasDispositivo, env);
+	if (limite) return conRestantes(limite, uso.dispositivo, env);
 
 	const result = await leerEtiqueta(imagen, tipo, env.GEMINI_API_KEY);
-	if ('error' in result) return conRestantes(json({ error: result.error }, result.status), uso.usadasDispositivo, env);
+	if ('error' in result) return conRestantes(json({ error: result.error }, result.status), uso.dispositivo, env);
 
-	return conRestantes(json(result), uso.usadasDispositivo, env);
+	return conRestantes(json(result), uso.dispositivo, env);
+}
+
+// ---------- Recompensa por ver un anuncio (verificación en servidor de AdMob) ----------
+//
+// Cuando alguien termina de ver un anuncio bonificado, AdMob llama a
+// GET /recompensa?ad_network=…&ad_unit=…&custom_data=<device id>&…&signature=…&key_id=…
+// La firma (ECDSA P-256 + SHA-256) cubre la query tal cual llega, hasta antes de "&signature=".
+// Las claves públicas de Google se descargan y se guardan como mucho 24 h.
+// https://developers.google.com/admob/android/ssv
+
+const ADMOB_KEYS_URL = 'https://gstatic.com/admob/reward/verifier-keys.json';
+const ADMOB_KEYS_TTL_MS = 24 * 60 * 60 * 1000;
+let clavesAdmob: { claves: Map<string, CryptoKey>; descargadas: number } | null = null;
+
+async function descargarClavesAdmob() {
+	const res = await fetch(ADMOB_KEYS_URL);
+	if (!res.ok) throw new Error(`verifier-keys.json: ${res.status}`);
+	const data = (await res.json()) as { keys?: { keyId: number | string; base64: string }[] };
+	const claves = new Map<string, CryptoKey>();
+	for (const k of data.keys ?? []) {
+		const der = Uint8Array.from(atob(k.base64), (c) => c.charCodeAt(0));
+		claves.set(String(k.keyId), await crypto.subtle.importKey('spki', der, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']));
+	}
+	clavesAdmob = { claves, descargadas: Date.now() };
+	return claves;
+}
+
+async function claveAdmob(keyId: string) {
+	const caducada = !clavesAdmob || Date.now() - clavesAdmob.descargadas > ADMOB_KEYS_TTL_MS;
+	let clave = caducada ? undefined : clavesAdmob!.claves.get(keyId);
+	// Google rota las claves: si no está la que piden, se vuelve a descargar una vez.
+	if (!clave) clave = (await descargarClavesAdmob()).get(keyId);
+	return clave ?? null;
+}
+
+function base64UrlABytes(s: string) {
+	const b64 = s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=');
+	return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+/** WebCrypto quiere la firma ECDSA como r||s (64 bytes); AdMob la manda en DER. */
+function derAFirmaCruda(der: Uint8Array) {
+	if (der[0] !== 0x30) return null;
+	let i = der[1] & 0x80 ? 2 + (der[1] & 0x7f) : 2;
+	const leerEntero = () => {
+		if (der[i] !== 0x02) return null;
+		const len = der[i + 1];
+		let v = der.subarray(i + 2, i + 2 + len);
+		i += 2 + len;
+		while (v.length > 32 && v[0] === 0) v = v.subarray(1);
+		if (v.length > 32) return null;
+		const out = new Uint8Array(32);
+		out.set(v, 32 - v.length);
+		return out;
+	};
+	const r = leerEntero();
+	const s = leerEntero();
+	if (!r || !s) return null;
+	const firma = new Uint8Array(64);
+	firma.set(r, 0);
+	firma.set(s, 32);
+	return firma;
+}
+
+async function firmaAdmobValida(query: string) {
+	const corte = query.indexOf('&signature=');
+	if (corte < 0) return false;
+	const firmado = query.slice(0, corte);
+	const params = new URLSearchParams(query.slice(corte + 1));
+	const firma = params.get('signature');
+	const keyId = params.get('key_id');
+	if (!firma || !keyId) return false;
+
+	const clave = await claveAdmob(keyId);
+	if (!clave) return false;
+	const cruda = derAFirmaCruda(base64UrlABytes(firma));
+	if (!cruda) return false;
+	return crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, clave, cruda, new TextEncoder().encode(firmado));
+}
+
+async function rutaRecompensa(request: Request, env: Env) {
+	// La query sin tocar: la firma va sobre el texto exacto, con su codificación y su orden.
+	const url = request.url;
+	const query = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
+	const params = new URLSearchParams(query);
+
+	// Sin firma no se da nada, pero se responde 200 por si AdMob prueba la URL al guardarla.
+	if (!params.has('signature')) return json({ ok: false, motivo: 'sin_firma' });
+	if (!(await firmaAdmobValida(query))) {
+		console.warn('recompensa rechazada: firma_invalida', { key_id: params.get('key_id'), ad_unit: params.get('ad_unit') });
+		return json({ error: 'firma_invalida' }, 403);
+	}
+
+	const deviceId = params.get('custom_data') ?? '';
+	const transaccion = params.get('transaction_id') ?? '';
+	// Firmado por Google pero sin un ID de Mako: es la prueba de la URL desde AdMob, que manda
+	// un ad_unit de ejemplo y sin custom_data. 200 para que AdMob la dé por buena, sin dar nada.
+	if (!DEVICE_ID_REGEX.test(deviceId) || !transaccion) {
+		console.log('recompensa sin dispositivo (prueba de AdMob)', { ad_unit: params.get('ad_unit') });
+		return json({ ok: false, motivo: 'datos_invalidos' });
+	}
+
+	// Solo vale nuestro bloque de anuncios: cualquiera podría apuntar otro bloque suyo a esta URL.
+	const bloque = env.ADMOB_REWARDED_AD_UNIT?.split('/').pop();
+	if (bloque && params.get('ad_unit') !== bloque) {
+		console.warn('recompensa rechazada: bloque_incorrecto', { ad_unit: params.get('ad_unit') });
+		return json({ error: 'bloque_incorrecto' }, 403);
+	}
+
+	// AdMob reintenta si no recibe 200: cada transacción se cuenta una sola vez.
+	const dia = hoy();
+	const nueva = await env.DB.prepare(
+		`INSERT INTO recompensas (transaction_id, device_id, dia) VALUES (?, ?, ?)
+		 ON CONFLICT(transaction_id) DO NOTHING RETURNING transaction_id`,
+	)
+		.bind(transaccion, deviceId, dia)
+		.first();
+	if (!nueva) return json({ ok: true, acreditada: false, motivo: 'repetida' });
+
+	// Solo se recarga si ya no le quedaba ninguna. Queda en exactamente RECARGA_ANUNCIO restantes
+	// (las peticiones rechazadas por el límite también suman en "peticiones").
+	const base = limiteDispositivo(env);
+	const recarga = await env.DB.prepare(
+		`UPDATE uso_diario SET extra = peticiones - ? + ?
+		 WHERE device_id = ? AND dia = ? AND peticiones >= ? + extra
+		 RETURNING extra`,
+	)
+		.bind(base, RECARGA_ANUNCIO, deviceId, dia, base)
+		.first();
+
+	await env.DB.prepare('UPDATE recompensas SET acreditada = ? WHERE transaction_id = ?')
+		.bind(recarga ? 1 : 0, transaccion)
+		.run();
+
+	return json({ ok: true, acreditada: Boolean(recarga) });
 }
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		try {
 			const url = new URL(request.url);
+
+			if (url.pathname === '/recompensa') {
+				if (request.method !== 'GET') return json({ error: 'metodo_no_permitido' }, 405);
+				return await rutaRecompensa(request, env);
+			}
 
 			const rutasPost: Record<string, typeof rutaAnalizar> = { '/analizar': rutaAnalizar, '/etiqueta': rutaEtiqueta };
 			const esUso = url.pathname === '/uso';

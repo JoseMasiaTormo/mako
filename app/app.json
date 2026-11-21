@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mako",
     "slug": "mako",
-    "version": "1.4.2",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,8 +16,11 @@
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.CAMERA", "android.permission.POST_NOTIFICATIONS"],
-      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -38,7 +41,34 @@
           "color": "#16A34A"
         }
       ],
-      "./plugins/withOptionalScreenFeatures"
+      "./plugins/withOptionalScreenFeatures",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Mako usa el micrófono para que puedas decir lo que has comido en el modo Automático.",
+          "speechRecognitionPermission": "Mako pasa tu voz a texto para que puedas decir lo que has comido en el modo Automático.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.tts"
+          ]
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-4090545321775886~5217350732",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511",
+          "delayAppMeasurementInit": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "-keep class com.google.android.gms.internal.consent_sdk.** { *; }"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

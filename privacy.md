@@ -1,6 +1,6 @@
 # Política de privacidad de Mako
 
-**Última actualización:** 6 de noviembre de 2026
+**Última actualización:** 20 de noviembre de 2026
 
 Esta política explica qué datos trata la aplicación **Mako** (paquete `es.josemasia.mako`), para qué se usan, con quién se comparten y qué puedes hacer con ellos.
 
@@ -14,7 +14,8 @@ Para cualquier duda o solicitud sobre privacidad puedes escribir a **josemasia20
 - Tu diario de comidas, tus objetivos, tu registro de agua y tus productos guardados se almacenan **solo en tu dispositivo**.
 - Ahora mismo Mako no te pide crear una cuenta ni te pide tu nombre, tu email o tu ubicación.
 - Cuando usas las funciones de inteligencia artificial, el texto que escribes o la foto de la etiqueta se envían a nuestro servidor y de ahí a **Google Gemini** para analizarlos. No guardamos ese contenido.
-- No vendemos tus datos ni los usamos para publicidad.
+- Si llegas al límite diario de análisis con IA, puedes ver **de forma voluntaria** un anuncio de **Google AdMob** para conseguir más. Solo entonces se cargan anuncios.
+- No vendemos tus datos ni los usamos nosotros para publicidad.
 
 ## Datos que se guardan en tu dispositivo
 
@@ -62,12 +63,29 @@ Como cualquier servicio en Internet, el proveedor de alojamiento (**Cloudflare**
 
 Cuando escaneas un código de barras o mencionas un producto envasado, la app consulta directamente la base de datos pública de **[Open Food Facts](https://world.openfoodfacts.org)**. Se envían el **código de barras** o el **nombre del producto** que buscas y, como en cualquier conexión a Internet, Open Food Facts recibe tu dirección IP. Consulta su [política de privacidad](https://world.openfoodfacts.org/privacy).
 
+### 5. Dictado por voz
+
+En el modo Automático puedes pulsar el micrófono para decir lo que has comido en vez de escribirlo. La voz se convierte en texto con el **servicio de reconocimiento de voz de tu móvil** (en Android, normalmente el de **Google**), que puede procesarla en el propio dispositivo o en sus servidores según tu móvil y tu configuración. Consulta la [política de privacidad de Google](https://policies.google.com/privacy).
+
+El audio **no se envía a nuestro servidor ni se guarda**: Mako solo recibe el texto reconocido, que aparece en el cuadro para que lo revises. Ese texto solo sale de tu dispositivo si después pulsas _Analizar_, igual que si lo hubieras escrito (apartado 1).
+
+### 6. Anuncios bonificados (Google AdMob)
+
+Mako no muestra anuncios mientras usas la app. Solo si te quedas sin análisis con IA del día y pulsas _Ver un anuncio_, se carga un anuncio de **Google AdMob** que, si lo ves entero, te da más análisis.
+
+- La primera vez que pulsas el botón, si estás en el Espacio Económico Europeo o el Reino Unido, Google te muestra un aviso para que elijas si aceptas anuncios personalizados. Puedes cambiar tu elección después con el enlace _Privacidad de los anuncios_, debajo del botón.
+- Para mostrar y medir el anuncio, AdMob recoge datos del dispositivo como el **identificador de publicidad de Android**, la dirección IP, el modelo del dispositivo e información sobre la interacción con el anuncio. Si no aceptas los anuncios personalizados, se muestran anuncios no personalizados. Consulta [cómo usa Google la información de las apps que usan sus servicios](https://policies.google.com/technologies/partner-sites).
+- Para darte los análisis extra, Google avisa a nuestro servidor de que has visto el anuncio. En ese aviso viaja el **identificador aleatorio de instalación** de Mako (el mismo que se usa para el límite diario), y guardamos el identificador de la transacción del anuncio para no contarlo dos veces.
+
+Puedes restablecer o eliminar tu identificador de publicidad en los ajustes de Android (_Google > Anuncios_).
+
 ## Permisos de la aplicación
 
 - **Cámara**: para escanear códigos de barras y hacer fotos a las tablas nutricionales. El código de barras se lee en el propio dispositivo. Las fotos de etiquetas solo se envían cuando pides analizarlas y no se guardan en la galería.
+- **Micrófono**: solo para el dictado por voz, mientras el micrófono del modo Automático está activo. Se pide la primera vez que lo pulsas y puedes negarlo: la app sigue funcionando escribiendo.
 - **Notificaciones**: para los recordatorios de comidas y agua que tú configures. Se programan en el propio dispositivo y no pasan por ningún servidor.
 
-Mako no accede a tu ubicación, contactos, micrófono ni archivos.
+Mako no accede a tu ubicación, contactos ni archivos.
 
 ## Finalidad y base legal
 
@@ -76,6 +94,7 @@ Tratamos los datos descritos únicamente para:
 - Ofrecerte las funciones de análisis con inteligencia artificial que solicitas (ejecución del servicio que pides).
 - Limitar el uso diario y proteger el servicio frente a abusos (interés legítimo).
 - Detectar y corregir errores técnicos (interés legítimo).
+- Darte análisis extra cuando ves un anuncio bonificado (ejecución del servicio que pides). Los anuncios personalizados solo se muestran con tu consentimiento.
 
 ## Con quién se comparten los datos
 
@@ -86,10 +105,12 @@ Solo con los proveedores necesarios para que la app funcione, y únicamente con 
 | Cloudflare          | Alojar el servidor           | Peticiones de análisis, IP, identificador aleatorio |
 | Google (Gemini API) | Analizar comidas y etiquetas | Texto de la comida o foto de la etiqueta            |
 | Open Food Facts     | Buscar productos envasados   | Código de barras o nombre del producto, IP          |
+| Google (reconocimiento de voz del móvil) | Pasar el dictado a texto | Audio de lo que dices mientras dictas |
+| Google (AdMob)      | Mostrar anuncios bonificados que tú pides | Identificador de publicidad, IP, datos del dispositivo e interacción con el anuncio; identificador aleatorio de instalación al dar la recompensa |
 
 Algunos de estos proveedores pueden tratar datos fuera del Espacio Económico Europeo, con las garantías previstas en sus propias políticas (como las cláusulas contractuales tipo de la Comisión Europea).
 
-No vendemos tus datos ni los compartimos con terceros con fines publicitarios.
+No vendemos tus datos. Fuera de los anuncios bonificados que tú decides ver (apartado 6), no compartimos datos con terceros con fines publicitarios.
 
 ## Seguridad
 

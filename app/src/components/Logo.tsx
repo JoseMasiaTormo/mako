@@ -1,21 +1,21 @@
 // src/components/Logo.tsx
-import { View } from "react-native";
-import { lightColors, useTheme } from "../theme";
+import { Image, View } from "react-native";
+import { useTheme } from "../theme";
 
 /**
- * Logotipo "Mako" dibujado con el mismo trazo que el icono de la app:
- * líneas gruesas con puntas redondeadas. La "M" lleva los colores del icono
- * (azul, naranja y rosa) y el resto de letras el color de texto del tema.
+ * Logotipo "Mako": el símbolo de la app (assets/logo-mark.png, sacado de
+ * assets/logo_v2.png) seguido de la palabra "Mako" dibujada con trazos
+ * gruesos de puntas redondeadas en el color de texto del tema.
  */
 
-// Proporciones sacadas del icono (assets/icon.png).
 const STROKE = 0.232; // grosor del trazo respecto a la altura
 const M_WIDTH = 1.062; // ancho de la M respecto a la altura
 const M_VALLEY = 0.624; // altura del vértice de la V de la M
 const X_HEIGHT = 0.68; // altura de las minúsculas respecto a la M
 
-// Los colores del icono son fijos, no cambian con el tema.
-const ICON = { left: lightColors.protein, mid: lightColors.carbs, right: lightColors.fat };
+const MARK = require("../../assets/logo-mark.png");
+const MARK_RATIO = 192 / 136; // ancho / alto del símbolo
+const MARK_SCALE = 1.15; // el símbolo, algo más alto que las letras
 
 type SegProps = { x1: number; y1: number; x2: number; y2: number; w: number; color: string };
 
@@ -71,17 +71,25 @@ export default function Logo({ height = 24 }: { height?: number }) {
 
   return (
     <View
-      style={{ flexDirection: "row", alignItems: "flex-end", gap }}
+      style={{ flexDirection: "row", alignItems: "center", gap }}
       accessible
       accessibilityRole="header"
       accessibilityLabel="Mako"
     >
+      {/* Símbolo */}
+      <Image
+        source={MARK}
+        style={{ width: H * MARK_SCALE * MARK_RATIO, height: H * MARK_SCALE, marginRight: gap * 0.6 }}
+        resizeMode="contain"
+        accessibilityIgnoresInvertColors
+      />
+
       {/* M */}
       <View style={{ width: mW, height: H }}>
-        <Seg x1={r} y1={r} x2={mW / 2} y2={H * M_VALLEY} w={w} color={ICON.mid} />
-        <Seg x1={mW / 2} y1={H * M_VALLEY} x2={mW - r} y2={r} w={w} color={ICON.mid} />
-        <Seg x1={r} y1={r} x2={r} y2={H - r} w={w} color={ICON.left} />
-        <Seg x1={mW - r} y1={r} x2={mW - r} y2={H - r} w={w} color={ICON.right} />
+        <Seg x1={r} y1={r} x2={mW / 2} y2={H * M_VALLEY} w={w} color={colors.text} />
+        <Seg x1={mW / 2} y1={H * M_VALLEY} x2={mW - r} y2={r} w={w} color={colors.text} />
+        <Seg x1={r} y1={r} x2={r} y2={H - r} w={w} color={colors.text} />
+        <Seg x1={mW - r} y1={r} x2={mW - r} y2={H - r} w={w} color={colors.text} />
       </View>
 
       {/* a */}

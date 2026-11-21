@@ -29,19 +29,32 @@ export type EtiquetaLeida = {
   racion_g: number | null;
 };
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  /** Código de error del Worker ("limite_diario", "cuota"…), si lo hay. */
+  constructor(
+    message: string,
+    readonly codigo?: string,
+  ) {
+    super(message);
+  }
+}
 
 // ---------- Peticiones de IA restantes hoy ----------
 // El Worker devuelve en cada respuesta cuántas le quedan al dispositivo.
 // Se guarda aquí para que cualquier pantalla pueda mostrar la cuenta atrás.
 
-export type Uso = { restantes: number; limite: number };
+/**
+ * `recarga`: análisis que da ver un anuncio cuando quedan 0 (el Worker antiguo no lo manda).
+ * `recargado`: se están gastando los de un anuncio; entonces `limite` es la recarga (3/5), no el diario.
+ */
+export type Uso = { restantes: number; limite: number; recarga?: number; recargado?: boolean };
 
 let usoActual: Uso | null = null;
 const oyentes = new Set<(u: Uso | null) => void>();
 
 function setUso(u: Uso) {
-  usoActual = u;
+  // Las cabeceras no traen "recarga": se conserva la última conocida.
+  usoActual = { ...u, recarga: u.recarga ?? usoActual?.recarga };
   oyentes.forEach((f) => f(u));
 }
 
@@ -60,7 +73,7 @@ function leerUsoDeCabeceras(res: Response) {
   const restantes = Number(res.headers.get("X-Peticiones-Restantes"));
   const limite = Number(res.headers.get("X-Peticiones-Limite"));
   if (res.headers.has("X-Peticiones-Restantes") && Number.isFinite(restantes) && limite > 0) {
-    setUso({ restantes, limite });
+    setUso({ restantes, limite, recargado: res.headers.get("X-Peticiones-Recargado") === "1" });
   }
 }
 
@@ -71,7 +84,12 @@ export async function consultarUso(deviceId: string) {
     if (!res.ok) return;
     const data = await res.json();
     if (typeof data?.restantes === "number" && typeof data?.limite === "number") {
-      setUso({ restantes: data.restantes, limite: data.limite });
+      setUso({
+        restantes: data.restantes,
+        limite: data.limite,
+        recarga: typeof data.recarga === "number" ? data.recarga : undefined,
+        recargado: data.recargado === true,
+      });
     }
   } catch {
     // Sin conexión: se mantiene el último valor conocido.
@@ -84,7 +102,7 @@ const MESSAGES: Record<string, string> = {
   texto_largo: "El texto es demasiado largo.",
   texto_vacio: "Escribe lo que has comido.",
   limite_diario:
-    "Has llegado al límite de análisis con IA de hoy. Mañana se reinicia. Mientras, puedes escanear el código de barras o añadirlo a mano.",
+    "Has llegado al límite de análisis con IA de hoy. Puedes ver un anuncio para conseguir más, esperar a mañana, escanear el código de barras o añadirlo a mano.",
   servicio_lleno:
     "La app ha llegado a su límite de uso de hoy. Mañana se reinicia. Mientras, puedes escanear el código de barras o añadirlo a mano.",
   imagen_vacia: "No se ha podido enviar la foto. Inténtalo de nuevo.",
@@ -122,7 +140,7 @@ async function postApi(path: string, body: unknown, deviceId: string, timeoutMs:
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    throw new ApiError(MESSAGES[data?.error] ?? fallback);
+    throw new ApiError(MESSAGES[data?.error] ?? fallback, data?.error);
   }
   return data;
 }

@@ -1,7 +1,8 @@
 import { SELF } from "cloudflare:test";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const GEMINI_HOST = "generativelanguage.googleapis.com";
+const ADMOB_KEYS_URL = "https://gstatic.com/admob/reward/verifier-keys.json";
 
 // ---------- Simulación de Gemini ----------
 // El Worker se ejecuta en el mismo entorno que los tests, así que espiando
@@ -30,6 +31,7 @@ beforeEach(() => {
 	const fetchOriginal = globalThis.fetch;
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
 		const url = input instanceof Request ? input.url : String(input);
+		if (url === ADMOB_KEYS_URL) return Response.json(clavesAdmobPublicadas);
 		if (!url.includes(GEMINI_HOST)) return fetchOriginal(input, init);
 
 		llamadasGemini.push({ url, init });
@@ -285,7 +287,7 @@ describe("límite diario por dispositivo", () => {
 
 		const res = await post("/analizar", { texto: "pan" }, id);
 		expect(res.status).toBe(429);
-		expect(await res.json()).toEqual({ error: "limite_diario", limite: 3 });
+		expect(await res.json()).toEqual({ error: "limite_diario", limite: 3, recarga: 5 });
 		// La petición que supera el límite no llega a Gemini.
 		expect(llamadasGemini).toHaveLength(3);
 
@@ -319,14 +321,14 @@ describe("peticiones restantes", () => {
 
 		let res = await uso();
 		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ limite: 3, restantes: 3 });
+		expect(await res.json()).toEqual({ limite: 3, restantes: 3, recargado: false, recarga: 5 });
 
 		await post("/analizar", { texto: "pan" }, id);
 		res = await uso();
-		expect(await res.json()).toEqual({ limite: 3, restantes: 2 });
+		expect(await res.json()).toEqual({ limite: 3, restantes: 2, recargado: false, recarga: 5 });
 		// Consultar no cuenta como petición.
 		res = await uso();
-		expect(await res.json()).toEqual({ limite: 3, restantes: 2 });
+		expect(await res.json()).toEqual({ limite: 3, restantes: 2, recargado: false, recarga: 5 });
 	});
 
 	it("GET /uso sin X-Device-Id devuelve 400", async () => {
@@ -388,5 +390,182 @@ describe("/etiqueta", () => {
 		const res = await post("/etiqueta", { imagen: IMAGEN });
 		expect(res.status).toBe(422);
 		expect(await res.json()).toEqual({ error: "etiqueta_ilegible" });
+	});
+});
+
+// ---------- Recompensas de AdMob (verificación en servidor) ----------
+// Se genera un par de claves propio y se publica como si fuera el verifier-keys.json de Google.
+// Los avisos de AdMob se firman con ECDSA P-256 + SHA-256 y la firma va en DER y base64 web-safe.
+
+const KEY_ID = "1234567890";
+const BLOQUE = "5224354917"; // el de ADMOB_REWARDED_AD_UNIT en vitest.config.mts
+let clavePrivada: CryptoKey;
+let clavesAdmobPublicadas: { keys: { keyId: number; pem: string; base64: string }[] } = { keys: [] };
+
+beforeAll(async () => {
+	const par = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+		"sign",
+		"verify",
+	])) as CryptoKeyPair;
+	clavePrivada = par.privateKey;
+	const spki = new Uint8Array((await crypto.subtle.exportKey("spki", par.publicKey)) as ArrayBuffer);
+	const base64 = btoa(String.fromCharCode(...spki));
+	clavesAdmobPublicadas = { keys: [{ keyId: Number(KEY_ID), pem: "", base64 }] };
+});
+
+/** r||s (lo que da WebCrypto) → DER (lo que manda AdMob). */
+function aDer(cruda: Uint8Array) {
+	const entero = (v: Uint8Array) => {
+		let i = 0;
+		while (i < v.length - 1 && v[i] === 0) i++;
+		v = v.subarray(i);
+		const bytes = v[0] & 0x80 ? [0, ...v] : [...v];
+		return [0x02, bytes.length, ...bytes];
+	};
+	const cuerpo = [...entero(cruda.subarray(0, 32)), ...entero(cruda.subarray(32))];
+	return new Uint8Array([0x30, cuerpo.length, ...cuerpo]);
+}
+
+const base64Url = (b: Uint8Array) =>
+	btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/** URL de aviso de AdMob firmada, con los parámetros en orden alfabético como la manda Google. */
+async function avisoAdmob(deviceId: string, opciones: { transaccion?: string; bloque?: string; clave?: CryptoKey } = {}) {
+	const query = [
+		"ad_network=5450213213286189855",
+		`ad_unit=${opciones.bloque ?? BLOQUE}`,
+		`custom_data=${encodeURIComponent(deviceId)}`,
+		"reward_amount=5",
+		"reward_item=analisis",
+		`timestamp=${Date.now()}`,
+		`transaction_id=${opciones.transaccion ?? crypto.randomUUID().replace(/-/g, "")}`,
+	].join("&");
+	const cruda = new Uint8Array(
+		await crypto.subtle.sign(
+			{ name: "ECDSA", hash: "SHA-256" },
+			opciones.clave ?? clavePrivada,
+			new TextEncoder().encode(query),
+		),
+	);
+	return `https://api.test/recompensa?${query}&signature=${base64Url(aDer(cruda))}&key_id=${KEY_ID}`;
+}
+
+const uso = async (id: string) =>
+	(await SELF.fetch("https://api.test/uso", { headers: { "X-Device-Id": id } })).json();
+
+/** Gasta todas las peticiones del día (LIMITE_DISPOSITIVO = 3 en los tests) y una más que se rechaza. */
+async function agotar(id: string, cuantas = 3) {
+	simularGemini(geminiOk({ items: [] }));
+	for (let i = 0; i < cuantas; i++) expect((await post("/analizar", { texto: "pan" }, id)).status).toBe(200);
+	expect((await post("/analizar", { texto: "pan" }, id)).status).toBe(429);
+}
+
+describe("/recompensa (anuncios bonificados)", () => {
+	it("sin firma responde 200 pero no da nada (AdMob puede probar la URL así)", async () => {
+		const res = await SELF.fetch("https://api.test/recompensa");
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ ok: false, motivo: "sin_firma" });
+	});
+
+	it("POST en /recompensa devuelve 405", async () => {
+		const res = await SELF.fetch("https://api.test/recompensa", { method: "POST" });
+		expect(res.status).toBe(405);
+	});
+
+	it("con las peticiones agotadas, un anuncio verificado deja exactamente 5 más", async () => {
+		const id = crypto.randomUUID();
+		await agotar(id);
+		expect(await uso(id)).toMatchObject({ restantes: 0 });
+
+		const res = await SELF.fetch(await avisoAdmob(id));
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ ok: true, acreditada: true });
+		// Se muestra como recarga (5/5), no sumado al límite diario (5/9).
+		expect(await uso(id)).toEqual({ restantes: 5, limite: 5, recargado: true, recarga: 5 });
+		simularGemini(geminiOk({ items: [] }));
+		const una = await post("/analizar", { texto: "pan" }, id);
+		expect(una.headers.get("X-Peticiones-Restantes")).toBe("4");
+		expect(una.headers.get("X-Peticiones-Limite")).toBe("5");
+		expect(una.headers.get("X-Peticiones-Recargado")).toBe("1");
+		await agotar(id, 4);
+
+		// Usadas las 5, la sexta vuelve a dar limite_diario.
+		expect(await uso(id)).toMatchObject({ restantes: 0 });
+	});
+
+	it("si aún le quedan peticiones, el anuncio no recarga nada", async () => {
+		const id = crypto.randomUUID();
+		simularGemini(geminiOk({ items: [] }));
+		await post("/analizar", { texto: "pan" }, id);
+
+		const res = await SELF.fetch(await avisoAdmob(id));
+		expect(await res.json()).toEqual({ ok: true, acreditada: false });
+		expect(await uso(id)).toMatchObject({ restantes: 2, limite: 3, recargado: false });
+	});
+
+	it("tras recargar, otro anuncio no suma hasta gastar las 5", async () => {
+		const id = crypto.randomUUID();
+		await agotar(id);
+		await SELF.fetch(await avisoAdmob(id));
+
+		const res = await SELF.fetch(await avisoAdmob(id));
+		expect(await res.json()).toEqual({ ok: true, acreditada: false });
+		expect(await uso(id)).toMatchObject({ restantes: 5 });
+	});
+
+	it("el mismo transaction_id (reintento de AdMob) solo cuenta una vez", async () => {
+		const id = crypto.randomUUID();
+		const transaccion = crypto.randomUUID().replace(/-/g, "");
+		await agotar(id);
+		await SELF.fetch(await avisoAdmob(id, { transaccion }));
+		await agotar(id, 5);
+
+		const res = await SELF.fetch(await avisoAdmob(id, { transaccion }));
+		expect(await res.json()).toEqual({ ok: true, acreditada: false, motivo: "repetida" });
+		expect(await uso(id)).toMatchObject({ restantes: 0 });
+	});
+
+	it("una firma hecha con otra clave se rechaza con 403", async () => {
+		const id = crypto.randomUUID();
+		await agotar(id);
+		const otra = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, [
+			"sign",
+			"verify",
+		])) as CryptoKeyPair;
+
+		const res = await SELF.fetch(await avisoAdmob(id, { clave: otra.privateKey }));
+		expect(res.status).toBe(403);
+		expect(await uso(id)).toMatchObject({ restantes: 0 });
+	});
+
+	it("si se cambia un parámetro firmado (otro dispositivo), se rechaza con 403", async () => {
+		const id = crypto.randomUUID();
+		const otro = crypto.randomUUID();
+		await agotar(otro);
+		const url = (await avisoAdmob(id)).replace(id, otro);
+
+		const res = await SELF.fetch(url);
+		expect(res.status).toBe(403);
+		expect(await uso(otro)).toMatchObject({ restantes: 0 });
+	});
+
+	it("un anuncio de otro bloque (bien firmado) se rechaza con 403", async () => {
+		const id = crypto.randomUUID();
+		await agotar(id);
+		const res = await SELF.fetch(await avisoAdmob(id, { bloque: "9999999999" }));
+		expect(res.status).toBe(403);
+		expect(await res.json()).toEqual({ error: "bloque_incorrecto" });
+	});
+
+	it("la prueba de URL de AdMob (firmada, ad_unit de ejemplo, sin dispositivo) responde 200", async () => {
+		const res = await SELF.fetch(await avisoAdmob("", { bloque: "1234567890" }));
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ ok: false, motivo: "datos_invalidos" });
+	});
+
+	it("con un custom_data que no es un ID de dispositivo responde 200 sin dar nada", async () => {
+		const res = await SELF.fetch(await avisoAdmob("no-es-un-uuid"));
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ ok: false, motivo: "datos_invalidos" });
 	});
 });
