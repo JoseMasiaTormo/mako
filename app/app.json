@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mako",
     "slug": "mako",
-    "version": "1.5.1",
+    "version": "1.5.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -63,7 +63,7 @@
         "expo-build-properties",
         {
           "android": {
-            "extraProguardRules": "-keep class com.google.android.gms.internal.consent_sdk.** { *; }"
+            "extraProguardRules": "-keep class com.google.android.gms.internal.consent_sdk.** { *; }\n-keep class * extends androidx.room.RoomDatabase { <init>(); }\n-keep class androidx.work.impl.** { *; }\n-keep class androidx.room.** { *; }"
           }
         }
       ]
