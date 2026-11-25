@@ -1,5 +1,5 @@
 // src/components/AddMealModal.tsx
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,17 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { getMiProductoPorCodigo, getMisProductos, NewMeal, NuevoMiProducto, saveMiProducto } from "../db";
+import {
+  deleteFavorito,
+  Favorito,
+  favoritoComoComida,
+  getFavoritos,
+  getMiProductoPorCodigo,
+  getMisProductos,
+  NewMeal,
+  NuevoMiProducto,
+  saveMiProducto,
+} from "../db";
 import { AiItem, analizarComida, ApiError, EtiquetaLeida, leerEtiqueta } from "../api";
 import { Colors, useTheme, useThemedStyles } from "../theme";
 import { useSQLiteContext } from "expo-sqlite";
@@ -34,7 +44,7 @@ type Props = {
   onSave: (meal: Omit<NewMeal, "date">) => void;
 };
 
-type Mode = "auto" | "manual";
+type Mode = "auto" | "manual" | "favoritas";
 
 const MAX_TEXTO = 300;
 type EditableItem = { base: AiItem; gramosText: string };
@@ -137,6 +147,19 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const db = useSQLiteContext();
   const uso = useUso(db, visible);
 
+  // null mientras se cargan.
+  const [favoritos, setFavoritos] = useState<Favorito[] | null>(null);
+  useEffect(() => {
+    if (!visible || mode !== "favoritas") return;
+    let vivo = true;
+    getFavoritos(db)
+      .then((f) => vivo && setFavoritos(f))
+      .catch(() => vivo && setFavoritos([]));
+    return () => {
+      vivo = false;
+    };
+  }, [db, visible, mode]);
+
   // Dictado por voz: lo que se dice se añade detrás de lo que ya estuviera escrito.
   const textoAntesDeDictar = useRef("");
   const dictado = useDictado((dicho) => {
@@ -161,6 +184,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     setReadingLabel(false);
     setSavingProduct(false);
     setEscaneado(null);
+    setFavoritos(null);
   };
 
   const close = () => {
@@ -261,7 +285,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
     if (!product || savingProduct || readingLabel) return;
     const nombre = product.nombre.trim();
     if (!nombre) {
-      Alert.alert("Falta el nombre");
+      Alert.alert("Falta el nombre", "Ponle un nombre para guardar.");
       return;
     }
     const faltan = [product.kcal, product.proteina, product.carbos, product.grasa].some((v) => !v.trim());
@@ -353,7 +377,7 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
   const saveManual = () => {
     const nombre = manual.name.trim();
     if (!nombre) {
-      Alert.alert("Falta el nombre");
+      Alert.alert("Falta el nombre", "Ponle un nombre para guardar.");
       return;
     }
     // Con gramos se puede pasar a valores por 100 g y guardarlo en Mis productos,
@@ -390,6 +414,77 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
           : undefined,
     });
     reset();
+  };
+
+  const addFavorito = async (fav: Favorito) => {
+    try {
+      onSave(await favoritoComoComida(db, fav));
+      reset();
+    } catch {
+      Alert.alert("Ups", "No se pudo añadir la comida.");
+    }
+  };
+
+  const confirmDeleteFavorito = (fav: Favorito) => {
+    Alert.alert("Quitar de favoritas", `¿Quitar "${fav.name}" de favoritas?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Quitar",
+        style: "destructive",
+        onPress: async () => {
+          await deleteFavorito(db, fav.clave).catch(() => {});
+          setFavoritos((f) => f?.filter((x) => x.id !== fav.id) ?? null);
+        },
+      },
+    ]);
+  };
+
+  const renderFavoritas = () => {
+    let contenido;
+    if (!favoritos) contenido = <ActivityIndicator color={colors.primary} style={styles.favLoading} />;
+    else if (!favoritos.length)
+      contenido = (
+        <Text style={styles.favEmpty}>
+          Aún no tienes comidas favoritas. Pulsa la estrella ☆ de una comida del día para guardarla aquí y apuntarla
+          otro día con un toque.
+        </Text>
+      );
+    else
+      contenido = (
+        <>
+          {favoritos.map((fav) => (
+            <Pressable
+              key={fav.id}
+              onPress={() => addFavorito(fav)}
+              onLongPress={() => confirmDeleteFavorito(fav)}
+              style={({ pressed }) => [styles.itemRow, pressed && styles.pressed]}
+            >
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemName} numberOfLines={2}>
+                  {fav.name}
+                </Text>
+                <Text style={styles.itemMacros}>
+                  {fav.grams != null ? `${Math.round(fav.grams)} g · ` : ""}P {Math.round(fav.protein)} · C{" "}
+                  {Math.round(fav.carbs)} · G {Math.round(fav.fat)}
+                </Text>
+              </View>
+              <Text style={styles.favKcal}>{Math.round(fav.kcal)} kcal</Text>
+            </Pressable>
+          ))}
+          <Text style={styles.hint}>Pulsa una para añadirla. Mantén pulsada para quitarla de favoritas.</Text>
+        </>
+      );
+
+    return (
+      <>
+        {contenido}
+        <View style={styles.buttons}>
+          <Pressable style={[styles.button, styles.cancel]} onPress={close}>
+            <Text style={styles.cancelText}>Cancelar</Text>
+          </Pressable>
+        </View>
+      </>
+    );
   };
 
   const renderRestantes = (style?: object) => {
@@ -654,9 +749,16 @@ export default function AddMealModal({ visible, onClose, onSave }: Props) {
                 >
                   <Text style={[styles.tabText, mode === "manual" && styles.tabTextActive]}>Manual</Text>
                 </Pressable>
+                <Pressable
+                  style={[styles.tab, mode === "favoritas" && styles.tabActive]}
+                  onPress={() => setMode("favoritas")}
+                  disabled={loading}
+                >
+                  <Text style={[styles.tabText, mode === "favoritas" && styles.tabTextActive]}>Favoritas</Text>
+                </Pressable>
               </View>
 
-              {mode === "auto" ? renderIa() : renderManual()}
+              {mode === "auto" ? renderIa() : mode === "manual" ? renderManual() : renderFavoritas()}
             </>
           )}
         </FloatingCard>
@@ -758,5 +860,9 @@ const makeStyles = (colors: Colors) =>
     scanText: { color: colors.primary, fontWeight: "600", fontSize: 15 },
     photoButton: { marginTop: 4, marginBottom: 16 },
     readingRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    pressed: { opacity: 0.6 },
+    favKcal: { fontSize: 15, fontWeight: "600", color: colors.text, marginLeft: 8 },
+    favEmpty: { fontSize: 14, color: colors.muted, lineHeight: 20, textAlign: "center", paddingVertical: 12 },
+    favLoading: { paddingVertical: 20 },
     sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.text, marginBottom: 8 },
   });
