@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { Goals } from "../db";
+import { TipoRecordatorio } from "../reminders";
 import { Colors, useTheme, useThemedStyles } from "../theme";
 import FloatingCard from "./FloatingCard";
 
@@ -18,8 +19,8 @@ type Props = {
   initial: Goals | null;
   onClose: () => void;
   onSave: (goals: Goals) => void;
-  reminders: boolean;
-  onToggleReminders: (on: boolean) => void;
+  reminders: Record<TipoRecordatorio, boolean>;
+  onToggleReminders: (tipo: TipoRecordatorio, on: boolean) => void;
 };
 
 const empty = { kcal: "", protein: "", carbs: "", fat: "", water: "" };
@@ -47,9 +48,38 @@ function Field({ label, value, onChangeText }: { label: string; value: string; o
   );
 }
 
-export default function GoalsModal({ visible, initial, onClose, onSave, reminders, onToggleReminders }: Props) {
+function ReminderRow({
+  title,
+  hint,
+  value,
+  onValueChange,
+}: {
+  title: string;
+  hint: string;
+  value: boolean;
+  onValueChange: (v: boolean) => void;
+}) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
+  return (
+    <View style={styles.reminder}>
+      <View style={styles.reminderText}>
+        <Text style={styles.reminderTitle}>{title}</Text>
+        <Text style={styles.reminderHint}>{hint}</Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ true: colors.primary, false: colors.border }}
+        thumbColor="#fff"
+        style={styles.switch}
+      />
+    </View>
+  );
+}
+
+export default function GoalsModal({ visible, initial, onClose, onSave, reminders, onToggleReminders }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const [form, setForm] = useState(empty);
 
   useEffect(() => {
@@ -74,7 +104,7 @@ export default function GoalsModal({ visible, initial, onClose, onSave, reminder
   const save = () => {
     const kcal = num(form.kcal);
     if (kcal <= 0) {
-      Alert.alert("Pon un objetivo de kcal");
+      Alert.alert("Faltan las kcal", "Pon un objetivo de kcal para guardar.");
       return;
     }
     onSave({
@@ -113,19 +143,18 @@ export default function GoalsModal({ visible, initial, onClose, onSave, reminder
           <Field label="Agua (ml)" value={form.water} onChangeText={set("water")} />
         </View>
 
-        <View style={styles.reminder}>
-          <View style={styles.reminderText}>
-            <Text style={styles.reminderTitle}>Recordarme beber agua</Text>
-            <Text style={styles.reminderHint}>Cada 2,5 h de 10:00 a 22:00. Para si llegas al objetivo.</Text>
-          </View>
-          <Switch
-            value={reminders}
-            onValueChange={onToggleReminders}
-            trackColor={{ true: colors.primary, false: colors.border }}
-            thumbColor="#fff"
-            style={styles.switch}
-          />
-        </View>
+        <ReminderRow
+          title="Recordarme beber agua"
+          hint="Cada 2,5 h de 10:00 a 22:00. Para si llegas al objetivo."
+          value={reminders.agua}
+          onValueChange={(on) => onToggleReminders("agua", on)}
+        />
+        <ReminderRow
+          title="Recordarme apuntar comidas"
+          hint="A las 10:00, 15:00 y 22:00. No avisa si ya has apuntado algo desde el aviso anterior."
+          value={reminders.comidas}
+          onValueChange={(on) => onToggleReminders("comidas", on)}
+        />
 
         <View style={styles.buttons}>
           <Pressable style={[styles.button, styles.cancel]} onPress={onClose}>
@@ -170,7 +199,7 @@ const makeStyles = (colors: Colors) =>
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
-      marginTop: 4,
+      marginTop: 8,
       backgroundColor: colors.bg,
       borderRadius: 12,
       paddingVertical: 14,

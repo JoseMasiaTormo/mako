@@ -3,10 +3,15 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSQLiteContext } from "expo-sqlite";
 import {
+  actualizarFavoritoDesde,
+  addFavorito,
   addMeal,
   addWater,
+  claveFavorito,
+  deleteFavorito,
   DEFAULT_GLASS_ML,
   deleteMeal,
+  getClavesFavoritos,
   getGlassMl,
   getGoals,
   getIngredientes,
@@ -26,7 +31,7 @@ import {
   updateMealGrams,
 } from "../db";
 import { addDays, labelFor, todayKey } from "../utils/date";
-import { getRemindersEnabled, initReminders, setRemindersEnabled, syncReminders } from "../reminders";
+import { getRemindersEnabled, initReminders, setRemindersEnabled, syncReminders, TipoRecordatorio } from "../reminders";
 import TotalsCard from "../components/TotalsCard";
 import MealItem from "../components/MealItem";
 import AddMealModal from "../components/AddMealModal";
@@ -50,8 +55,15 @@ export default function DayScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [goalsVisible, setGoalsVisible] = useState(false);
   const [editing, setEditing] = useState<{ meal: Meal; ingredientes: Ingrediente[] } | null>(null);
-  const [reminders, setReminders] = useState(false);
+  const [reminders, setReminders] = useState<Record<TipoRecordatorio, boolean>>({ agua: false, comidas: false });
   const [novedades, setNovedades] = useState<Novedad | null>(null);
+  const [favoritas, setFavoritas] = useState<Set<string>>(new Set());
+
+  const loadFavoritas = useCallback(() => {
+    getClavesFavoritos(db)
+      .then(setFavoritas)
+      .catch(() => {});
+  }, [db]);
 
   const load = useCallback(async () => {
     const [rows, ml] = await Promise.all([getMealsByDate(db, date), getWaterByDate(db, date)]);
@@ -66,15 +78,16 @@ export default function DayScreen() {
   useEffect(() => {
     getGoals(db).then(setGoals);
     getGlassMl(db).then(setGlassMlState);
-  }, [db]);
+    loadFavoritas();
+  }, [db, loadFavoritas]);
 
   useEffect(() => {
     (async () => {
       // Pide permiso de notificaciones (solo la primera vez) y reprograma los recordatorios.
       const reminders = () =>
         initReminders(db)
-          .then(() => getRemindersEnabled(db))
-          .then(setReminders)
+          .then(() => Promise.all([getRemindersEnabled(db, "agua"), getRemindersEnabled(db, "comidas")]))
+          .then(([agua, comidas]) => setReminders({ agua, comidas }))
           .catch(() => {});
 
       const seen = await getSettings(db, "aviso_visto");
@@ -110,6 +123,8 @@ export default function DayScreen() {
     await addMeal(db, { ...meal, date });
     setModalVisible(false);
     load();
+    loadFavoritas();
+    if (date === todayKey()) syncReminders(db).catch(() => {});
   };
 
   const handleAddWater = async () => {
@@ -146,24 +161,45 @@ export default function DayScreen() {
     await updateMealGrams(db, meal, grams);
     setEditing(null);
     load();
+    actualizarFavoritoDesde(db, meal.id).catch(() => {});
   };
 
   const handleEditIngredientes = async (meal: Meal, ingredientes: Ingrediente[]) => {
     await updateIngredientes(db, meal.id, ingredientes);
     setEditing(null);
     load();
+    actualizarFavoritoDesde(db, meal.id).catch(() => {});
   };
 
-  const handleToggleReminders = async (on: boolean) => {
-    setReminders(on);
-    const ok = await setRemindersEnabled(db, on).catch(() => false);
-    setReminders(ok);
+  const handleToggleReminders = async (tipo: TipoRecordatorio, on: boolean) => {
+    setReminders((r) => ({ ...r, [tipo]: on }));
+    const ok = await setRemindersEnabled(db, tipo, on).catch(() => false);
+    setReminders((r) => ({ ...r, [tipo]: ok }));
     if (on && !ok) {
       Alert.alert(
         "Notificaciones desactivadas",
         "Para recibir los recordatorios, permite las notificaciones de Mako en los ajustes del móvil.",
       );
     }
+  };
+
+  const handleToggleFavorita = async (meal: Meal) => {
+    const clave = claveFavorito(meal.name);
+    const era = favoritas.has(clave);
+    // Respuesta inmediata; luego se recarga lo que haya quedado en la base de datos.
+    setFavoritas((f) => {
+      const n = new Set(f);
+      if (era) n.delete(clave);
+      else n.add(clave);
+      return n;
+    });
+    try {
+      if (era) await deleteFavorito(db, clave);
+      else await addFavorito(db, meal);
+    } catch {
+      Alert.alert("Ups", "No se pudo guardar en favoritas.");
+    }
+    loadFavoritas();
   };
 
   const handleDelete = (meal: Meal) => {
@@ -175,6 +211,7 @@ export default function DayScreen() {
         onPress: async () => {
           await deleteMeal(db, meal.id);
           load();
+          if (date === todayKey()) syncReminders(db).catch(() => {});
         },
       },
     ]);
@@ -227,12 +264,15 @@ export default function DayScreen() {
 
       <FlatList
         data={meals}
+        extraData={favoritas}
         keyExtractor={(m) => String(m.id)}
         renderItem={({ item }) => (
           <MealItem
             meal={item}
             onPress={item.grams ? () => openEdit(item) : undefined}
             onLongPress={() => handleDelete(item)}
+            favorita={favoritas.has(claveFavorito(item.name))}
+            onToggleFavorita={() => handleToggleFavorita(item)}
           />
         )}
         contentContainerStyle={styles.list}
@@ -243,7 +283,14 @@ export default function DayScreen() {
         <Text style={styles.fabText}>+</Text>
       </Pressable>
 
-      <AddMealModal visible={modalVisible} onClose={() => setModalVisible(false)} onSave={handleAdd} />
+      <AddMealModal
+        visible={modalVisible}
+        onClose={() => {
+          setModalVisible(false);
+          loadFavoritas(); // por si se ha borrado alguna desde la pestaña Favoritas
+        }}
+        onSave={handleAdd}
+      />
 
       <EditGramsModal
         key={editing?.meal.id ?? "cerrado"}

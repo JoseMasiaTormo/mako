@@ -41,7 +41,7 @@ export type Totals = {
   fat: number;
 };
 
-const DB_VERSION = 9;
+const DB_VERSION = 10;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
@@ -176,6 +176,38 @@ export async function migrate(db: SQLiteDatabase) {
     version = 9;
   }
 
+  if (version === 9) {
+    // Comidas favoritas: copia de una comida (con su desglose) para volver a apuntarla tal cual.
+    // "clave" es el nombre normalizado: una sola favorita por nombre.
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS favoritos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        clave TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        grams REAL,
+        kcal REAL NOT NULL DEFAULT 0,
+        protein REAL NOT NULL DEFAULT 0,
+        carbs REAL NOT NULL DEFAULT 0,
+        fat REAL NOT NULL DEFAULT 0,
+        creado TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS favorito_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        favorito_id INTEGER NOT NULL,
+        nombre TEXT NOT NULL,
+        gramos REAL NOT NULL DEFAULT 0,
+        kcal REAL NOT NULL DEFAULT 0,
+        proteina REAL NOT NULL DEFAULT 0,
+        carbos REAL NOT NULL DEFAULT 0,
+        grasa REAL NOT NULL DEFAULT 0,
+        fuente TEXT NOT NULL DEFAULT 'ia',
+        unidad_g REAL NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_favorito_items_fav ON favorito_items(favorito_id);
+    `);
+    version = 10;
+  }
+
   await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
 }
 
@@ -304,6 +336,90 @@ export async function deleteMeal(db: SQLiteDatabase, id: number) {
     await db.runAsync("DELETE FROM meal_items WHERE meal_id = ?", id);
     await db.runAsync("DELETE FROM meals WHERE id = ?", id);
   });
+}
+
+// ---------- Comidas favoritas ----------
+
+export type Favorito = Omit<Meal, "date" | "created_at" | "unidades"> & { clave: string };
+
+/** Clave de una favorita a partir del nombre: sin mayúsculas, tildes ni espacios de más. */
+export function claveFavorito(nombre: string) {
+  return nombre
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+export function getFavoritos(db: SQLiteDatabase) {
+  return db.getAllAsync<Favorito>("SELECT id, clave, name, grams, kcal, protein, carbs, fat FROM favoritos ORDER BY name COLLATE NOCASE");
+}
+
+export async function getClavesFavoritos(db: SQLiteDatabase) {
+  const rows = await db.getAllAsync<{ clave: string }>("SELECT clave FROM favoritos");
+  return new Set(rows.map((r) => r.clave));
+}
+
+/** Guarda una comida (y su desglose) como favorita. Si ya había una con el mismo nombre, la sustituye. */
+export async function addFavorito(db: SQLiteDatabase, meal: Meal) {
+  const clave = claveFavorito(meal.name);
+  await db.withTransactionAsync(async () => {
+    await borrarFavoritoPorClave(db, clave);
+    const { lastInsertRowId: id } = await db.runAsync(
+      "INSERT INTO favoritos (clave, name, grams, kcal, protein, carbs, fat) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      clave,
+      meal.name.trim(),
+      meal.grams,
+      meal.kcal,
+      meal.protein,
+      meal.carbs,
+      meal.fat,
+    );
+    await db.runAsync(
+      `INSERT INTO favorito_items (favorito_id, nombre, gramos, kcal, proteina, carbos, grasa, fuente, unidad_g)
+        SELECT ?, nombre, gramos, kcal, proteina, carbos, grasa, fuente, unidad_g FROM meal_items WHERE meal_id = ? ORDER BY id`,
+      id,
+      meal.id,
+    );
+  });
+}
+
+/**
+ * Tras editar una comida: si es favorita (mismo nombre), la favorita pasa a tener sus valores
+ * y su desglose nuevos.
+ */
+export async function actualizarFavoritoDesde(db: SQLiteDatabase, mealId: number) {
+  const meal = await db.getFirstAsync<Meal>("SELECT * FROM meals WHERE id = ?", mealId);
+  if (!meal) return;
+  const existe = await db.getFirstAsync("SELECT 1 FROM favoritos WHERE clave = ?", claveFavorito(meal.name));
+  if (existe) await addFavorito(db, meal);
+}
+
+async function borrarFavoritoPorClave(db: SQLiteDatabase, clave: string) {
+  await db.runAsync("DELETE FROM favorito_items WHERE favorito_id IN (SELECT id FROM favoritos WHERE clave = ?)", clave);
+  await db.runAsync("DELETE FROM favoritos WHERE clave = ?", clave);
+}
+
+export async function deleteFavorito(db: SQLiteDatabase, clave: string) {
+  await db.withTransactionAsync(() => borrarFavoritoPorClave(db, clave));
+}
+
+/** La favorita lista para volver a apuntarla como comida, con su desglose. */
+export async function favoritoComoComida(db: SQLiteDatabase, fav: Favorito): Promise<Omit<NewMeal, "date">> {
+  const items = await db.getAllAsync<NuevoIngrediente>(
+    "SELECT nombre, gramos, kcal, proteina, carbos, grasa, fuente, unidad_g FROM favorito_items WHERE favorito_id = ? ORDER BY id",
+    fav.id,
+  );
+  return {
+    name: fav.name,
+    grams: fav.grams,
+    kcal: fav.kcal,
+    protein: fav.protein,
+    carbs: fav.carbs,
+    fat: fav.fat,
+    ingredientes: items.length ? items : undefined,
+  };
 }
 
 export async function getSettings(db: SQLiteDatabase, key: string) {

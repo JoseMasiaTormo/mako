@@ -7,9 +7,11 @@ type Props = {
   meal: Meal;
   onPress?: () => void;
   onLongPress: () => void;
+  favorita: boolean;
+  onToggleFavorita: () => void;
 };
 
-export default function MealItem({ meal, onPress, onLongPress }: Props) {
+export default function MealItem({ meal, onPress, onLongPress, favorita, onToggleFavorita }: Props) {
   const styles = useThemedStyles(makeStyles);
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.item, pressed && styles.pressed]}>
@@ -24,6 +26,15 @@ export default function MealItem({ meal, onPress, onLongPress }: Props) {
         </Text>
       </View>
       <Text style={styles.kcal}>{Math.round(meal.kcal)} kcal</Text>
+      <Pressable
+        onPress={onToggleFavorita}
+        hitSlop={10}
+        style={styles.star}
+        accessibilityRole="button"
+        accessibilityLabel={favorita ? "Quitar de favoritas" : "Añadir a favoritas"}
+      >
+        <Text style={[styles.starText, favorita && styles.starOn]}>{favorita ? "★" : "☆"}</Text>
+      </Pressable>
     </Pressable>
   );
 }
@@ -45,4 +56,7 @@ const makeStyles = (colors: Colors) =>
     name: { fontSize: 16, fontWeight: "500", color: colors.text },
     macros: { fontSize: 13, color: colors.muted, marginTop: 2 },
     kcal: { fontSize: 15, fontWeight: "600", color: colors.text },
+    star: { marginLeft: 12 },
+    starText: { fontSize: 22, color: colors.muted },
+    starOn: { color: "#F5B301" },
   });

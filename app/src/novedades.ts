@@ -12,6 +12,14 @@ export type Novedad = {
  */
 export const NOVEDADES: Novedad[] = [
   {
+    version: "1.6.0",
+    cambios: [
+      "Comidas favoritas: pulsa la estrella ☆ de cualquier comida del día para guardarla. La próxima vez, en Añadir comida › Favoritas, la apuntas con un toque, con los mismos valores y sin gastar análisis de IA.",
+      "Nuevo recordatorio para apuntar tus comidas: actívalo en Objetivos y te avisará a las 10:00, a las 15:00 y a las 22:00. Si ya has apuntado algo desde el aviso anterior, no te molesta.",
+      "Los avisos que salen cuando falta un dato (como las kcal en Objetivos o el nombre de una comida) ahora son más compactos y explican qué falta.",
+    ],
+  },
+  {
     version: "1.5.0",
     cambios: [
       "Mako estrena logo: un nuevo icono con los colores de siempre.",
