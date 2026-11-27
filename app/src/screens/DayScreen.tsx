@@ -17,6 +17,9 @@ import {
   getIngredientes,
   Ingrediente,
   getMealsByDate,
+  getModoObjetivos,
+  getPerfil,
+  ModoObjetivos,
   getWaterByDate,
   MAX_FAVORITAS,
   getSettings,
@@ -25,6 +28,8 @@ import {
   NewMeal,
   removeLastWater,
   saveGoals,
+  savePerfil,
+  setModoObjetivos,
   setGlassMl,
   setSettings,
   sumTotals,
@@ -36,7 +41,8 @@ import { getRemindersEnabled, initReminders, setRemindersEnabled, syncReminders,
 import TotalsCard from "../components/TotalsCard";
 import MealItem from "../components/MealItem";
 import AddMealModal from "../components/AddMealModal";
-import GoalsModal from "../components/GoalsModal";
+import GoalsModal, { GuardarObjetivos } from "../components/GoalsModal";
+import type { Perfil } from "../utils/objetivos";
 import EditGramsModal from "../components/EditGramsModal";
 import Logo from "../components/Logo";
 import WaterCard from "../components/WaterCard";
@@ -55,11 +61,13 @@ export default function DayScreen() {
   const [water, setWater] = useState(0);
   const [glassMl, setGlassMlState] = useState(DEFAULT_GLASS_ML);
   const [goals, setGoals] = useState<Goals | null>(null);
+  const [perfil, setPerfil] = useState<Perfil | null>(null);
+  const [modoObjetivos, setModoObjetivosState] = useState<ModoObjetivos>("manual");
   const [modalVisible, setModalVisible] = useState(false);
   const [goalsVisible, setGoalsVisible] = useState(false);
   const [editing, setEditing] = useState<{ meal: Meal; ingredientes: Ingrediente[] } | null>(null);
   const [reminders, setReminders] = useState<Record<TipoRecordatorio, boolean>>({ agua: false, comidas: false });
-  const [novedades, setNovedades] = useState<Novedad | null>(null);
+  const [novedades, setNovedades] = useState<Novedad[]>([]);
   const [favoritas, setFavoritas] = useState<Set<string>>(new Set());
 
   const loadFavoritas = useCallback(() => {
@@ -80,6 +88,12 @@ export default function DayScreen() {
 
   useEffect(() => {
     getGoals(db).then(setGoals);
+    getPerfil(db)
+      .then(setPerfil)
+      .catch(() => {});
+    getModoObjetivos(db)
+      .then(setModoObjetivosState)
+      .catch(() => {});
     getGlassMl(db).then(setGlassMlState);
     loadFavoritas();
   }, [db, loadFavoritas]);
@@ -148,9 +162,13 @@ export default function DayScreen() {
     setGlassMl(db, ml);
   };
 
-  const handleSaveGoals = async (g: Goals) => {
+  const handleSaveGoals = async ({ goals: g, perfil: p, modo }: GuardarObjetivos) => {
     await saveGoals(db, g);
+    if (p) await savePerfil(db, p, todayKey());
+    await setModoObjetivos(db, modo);
     setGoals(g);
+    if (p) setPerfil(p);
+    setModoObjetivosState(modo);
     setGoalsVisible(false);
     syncReminders(db).catch(() => {});
   };
@@ -319,9 +337,9 @@ export default function DayScreen() {
       />
 
       <NovedadesModal
-        novedad={novedades}
+        novedades={novedades}
         onClose={() => {
-          setNovedades(null);
+          setNovedades([]);
           marcarNovedadesVistas(db).catch(() => {});
         }}
       />
@@ -329,6 +347,8 @@ export default function DayScreen() {
       <GoalsModal
         visible={goalsVisible}
         initial={goals}
+        perfil={perfil}
+        modo={modoObjetivos}
         reminders={reminders}
         onToggleReminders={handleToggleReminders}
         onClose={() => setGoalsVisible(false)}

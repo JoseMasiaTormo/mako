@@ -4,24 +4,27 @@ import { Colors, useThemedStyles } from "../theme";
 import FloatingCard from "./FloatingCard";
 
 type Props = {
-  novedad: Novedad | null;
+  novedades: Novedad[];
   onClose: () => void;
 };
 
 /** Notas del parche que se enseñan una vez tras actualizar la app. */
-export default function NovedadesModal({ novedad, onClose }: Props) {
+export default function NovedadesModal({ novedades, onClose }: Props) {
   const styles = useThemedStyles(makeStyles);
 
   return (
-    <Modal visible={novedad != null} animationType="fade" transparent onRequestClose={onClose}>
+    <Modal visible={novedades.length > 0} animationType="fade" transparent onRequestClose={onClose}>
       <FloatingCard>
         <Text style={styles.title}>Novedades</Text>
-        <Text style={styles.version}>Versión {novedad?.version}</Text>
-
-        {novedad?.cambios.map((cambio, i) => (
-          <View key={i} style={styles.item}>
-            <Text style={styles.bullet}>•</Text>
-            <Text style={styles.text}>{cambio}</Text>
+        {novedades.map((novedad) => (
+          <View key={novedad.version}>
+            <Text style={styles.version}>Versión {novedad.version}</Text>
+            {novedad.cambios.map((cambio, i) => (
+              <View key={i} style={styles.item}>
+                <Text style={styles.bullet}>•</Text>
+                <Text style={styles.text}>{cambio}</Text>
+              </View>
+            ))}
           </View>
         ))}
 
@@ -36,7 +39,7 @@ export default function NovedadesModal({ novedad, onClose }: Props) {
 const makeStyles = (colors: Colors) =>
   StyleSheet.create({
     title: { fontSize: 20, fontWeight: "700", color: colors.text },
-    version: { fontSize: 13, color: colors.muted, marginTop: 2, marginBottom: 16 },
+    version: { fontSize: 13, color: colors.muted, marginTop: 12, marginBottom: 10 },
     item: { flexDirection: "row", gap: 8, marginBottom: 10 },
     bullet: { fontSize: 15, color: colors.primary, fontWeight: "700", lineHeight: 21 },
     text: { flex: 1, fontSize: 15, color: colors.text, lineHeight: 21 },

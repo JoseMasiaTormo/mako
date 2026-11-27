@@ -12,6 +12,14 @@ export type Novedad = {
  */
 export const NOVEDADES: Novedad[] = [
   {
+    version: "1.7.0",
+    cambios: [
+      "Mako ya puede calcular tus objetivos: en Objetivos (⚙︎), elige «Con mis datos» y dinos tu sexo, edad, altura, peso, cuánto te mueves y qué quieres conseguir. Te dice tus kcal, proteína, carbos y grasa, y de dónde sale cada número.",
+      "Puedes cambiar tus datos cuando quieras. Si cambias tu peso, los objetivos se recalculan solos.",
+      "¿Prefieres poner tus números? En «A mano» siguen tus objetivos de siempre, tal cual los tenías.",
+    ],
+  },
+  {
     version: "1.6.1",
     cambios: [
       "Ahora la pantalla del día hace scroll entera: el agua, las calorías y tus comidas se mueven juntas. Así se ve bien también en pantallas pequeñas, como la exterior de los móviles plegables.",
@@ -48,12 +56,15 @@ export const NOVEDADES: Novedad[] = [
 
 const CLAVE = "novedades_vistas";
 
-/** Las novedades que el usuario aún no ha visto, o null si no hay. */
-export async function getNovedadesPendientes(db: SQLiteDatabase): Promise<Novedad | null> {
-  const ultima = NOVEDADES[0];
-  if (!ultima) return null;
+/**
+ * Las novedades que el usuario aún no ha visto, de la más reciente a la más antigua
+ * (si se ha saltado versiones, las ve todas juntas). Lista vacía si no hay nada nuevo.
+ */
+export async function getNovedadesPendientes(db: SQLiteDatabase): Promise<Novedad[]> {
   const vista = await getSettings(db, CLAVE);
-  return vista === ultima.version ? null : ultima;
+  const i = NOVEDADES.findIndex((n) => n.version === vista);
+  // Si la versión vista no está en la lista (muy antigua), enseñamos solo la última.
+  return i === -1 ? NOVEDADES.slice(0, 1) : NOVEDADES.slice(0, i);
 }
 
 /** Marca las últimas novedades como vistas (también al instalar, para no enseñarlas a quien acaba de llegar). */
