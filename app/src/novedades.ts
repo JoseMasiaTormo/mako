@@ -12,6 +12,14 @@ export type Novedad = {
  */
 export const NOVEDADES: Novedad[] = [
   {
+    version: "1.6.1",
+    cambios: [
+      "Ahora la pantalla del día hace scroll entera: el agua, las calorías y tus comidas se mueven juntas. Así se ve bien también en pantallas pequeñas, como la exterior de los móviles plegables.",
+      "El límite diario de análisis con IA pasa a ser de 5. Si te quedas sin ellos, puedes seguir viendo un anuncio para conseguir 5 más.",
+      "Puedes guardar hasta 5 comidas favoritas. Si ya tienes 5, quita alguna para añadir otra nueva.",
+    ],
+  },
+  {
     version: "1.6.0",
     cambios: [
       "Comidas favoritas: pulsa la estrella ☆ de cualquier comida del día para guardarla. La próxima vez, en Añadir comida › Favoritas, la apuntas con un toque, con los mismos valores y sin gastar análisis de IA.",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSQLiteContext } from "expo-sqlite";
 import {
@@ -18,6 +18,7 @@ import {
   Ingrediente,
   getMealsByDate,
   getWaterByDate,
+  MAX_FAVORITAS,
   getSettings,
   Goals,
   Meal,
@@ -47,6 +48,8 @@ export default function DayScreen() {
   const styles = useThemedStyles(makeStyles);
   const { mode, toggleTheme } = useTheme();
   const db = useSQLiteContext();
+  // Pantallas muy bajitas, como la exterior de un móvil plegable.
+  const compacta = useWindowDimensions().height < 500;
   const [date, setDate] = useState(todayKey());
   const [meals, setMeals] = useState<Meal[]>([]);
   const [water, setWater] = useState(0);
@@ -186,6 +189,13 @@ export default function DayScreen() {
   const handleToggleFavorita = async (meal: Meal) => {
     const clave = claveFavorito(meal.name);
     const era = favoritas.has(clave);
+    if (!era && favoritas.size >= MAX_FAVORITAS) {
+      Alert.alert(
+        "Máximo de favoritas",
+        `Puedes guardar hasta ${MAX_FAVORITAS} comidas favoritas. Quita alguna para añadir esta.`,
+      );
+      return;
+    }
     // Respuesta inmediata; luego se recarga lo que haya quedado en la base de datos.
     setFavoritas((f) => {
       const n = new Set(f);
@@ -222,7 +232,7 @@ export default function DayScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, compacta && styles.topBarCompacta]}>
         <Logo height={24} />
         <View style={styles.actions}>
           <Pressable
@@ -239,29 +249,6 @@ export default function DayScreen() {
         </View>
       </View>
 
-      <View style={styles.header}>
-        <Pressable onPress={() => setDate((d) => addDays(d, -1))} hitSlop={12}>
-          <Text style={styles.arrow}>‹</Text>
-        </Pressable>
-        <Pressable onPress={() => setDate(todayKey())} disabled={isToday}>
-          <Text style={styles.dateLabel}>{labelFor(date)}</Text>
-        </Pressable>
-        <Pressable onPress={() => setDate((d) => addDays(d, 1))} hitSlop={12}>
-          <Text style={styles.arrow}>›</Text>
-        </Pressable>
-      </View>
-
-      <WaterCard
-        ml={water}
-        goal={goals?.water ?? 0}
-        glassMl={glassMl}
-        onAdd={handleAddWater}
-        onRemoveLast={handleRemoveWater}
-        onChangeGlass={handleChangeGlass}
-      />
-
-      <TotalsCard totals={totals} goals={goals} onSetGoals={() => setGoalsVisible(true)} />
-
       <FlatList
         data={meals}
         extraData={favoritas}
@@ -275,6 +262,36 @@ export default function DayScreen() {
             onToggleFavorita={() => handleToggleFavorita(item)}
           />
         )}
+        // Todo lo de arriba va dentro de la lista para que haga scroll con ella: en pantallas
+        // bajitas (p. ej. la exterior de un móvil plegable) las tarjetas fijas no dejaban
+        // sitio a la lista y no se podía scrollear.
+        ListHeaderComponent={
+          <>
+            <View style={styles.header}>
+              <Pressable onPress={() => setDate((d) => addDays(d, -1))} hitSlop={12}>
+                <Text style={styles.arrow}>‹</Text>
+              </Pressable>
+              <Pressable onPress={() => setDate(todayKey())} disabled={isToday}>
+                <Text style={styles.dateLabel}>{labelFor(date)}</Text>
+              </Pressable>
+              <Pressable onPress={() => setDate((d) => addDays(d, 1))} hitSlop={12}>
+                <Text style={styles.arrow}>›</Text>
+              </Pressable>
+            </View>
+
+            <WaterCard
+              ml={water}
+              goal={goals?.water ?? 0}
+              glassMl={glassMl}
+              onAdd={handleAddWater}
+              onRemoveLast={handleRemoveWater}
+              onChangeGlass={handleChangeGlass}
+            />
+
+            <TotalsCard totals={totals} goals={goals} onSetGoals={() => setGoalsVisible(true)} />
+          </>
+        }
+        ListHeaderComponentStyle={styles.listHeader}
         contentContainerStyle={styles.list}
         ListEmptyComponent={<Text style={styles.empty}>Sin comidas este día</Text>}
       />
@@ -331,6 +348,8 @@ const makeStyles = (colors: Colors) =>
       paddingHorizontal: 24,
       paddingTop: 8,
     },
+    // Subimos la barra y le damos aire por debajo para que no quede pegada.
+    topBarCompacta: { paddingTop: 0, paddingBottom: 8 },
     actions: { flexDirection: "row", alignItems: "center", gap: 20 },
     gear: { fontSize: 24, color: colors.text },
     header: {
@@ -343,6 +362,8 @@ const makeStyles = (colors: Colors) =>
     arrow: { fontSize: 32, color: colors.text, paddingHorizontal: 8 },
     dateLabel: { fontSize: 18, fontWeight: "600", color: colors.text, textTransform: "capitalize" },
     list: { paddingHorizontal: 16, paddingBottom: 100 },
+    // Las tarjetas ya llevan su propio margen lateral: anulamos el padding de la lista.
+    listHeader: { marginHorizontal: -16 },
     empty: { textAlign: "center", color: colors.muted, marginTop: 40, fontSize: 15 },
     fab: {
       position: "absolute",
