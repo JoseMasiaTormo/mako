@@ -4,7 +4,7 @@ import { consultarUso, getUso, suscribirUso, Uso } from "../api";
 import { getDeviceId } from "../device";
 
 /**
- * Peticiones de IA que le quedan hoy al dispositivo (cuenta atrás de 8 a 0, más las
+ * Peticiones de IA que le quedan hoy al dispositivo (cuenta atrás de 5 a 0, más las
  * que se consigan viendo anuncios).
  * Mientras `activo` sea true, pregunta al Worker el valor actual al activarse.
  */

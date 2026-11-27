@@ -340,6 +340,9 @@ export async function deleteMeal(db: SQLiteDatabase, id: number) {
 
 // ---------- Comidas favoritas ----------
 
+/** Cuántas comidas favoritas se pueden guardar como mucho. */
+export const MAX_FAVORITAS = 5;
+
 export type Favorito = Omit<Meal, "date" | "created_at" | "unidades"> & { clave: string };
 
 /** Clave de una favorita a partir del nombre: sin mayúsculas, tildes ni espacios de más. */

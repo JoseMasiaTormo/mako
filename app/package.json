@@ -1,6 +1,6 @@
 {
   "name": "mako",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "main": "index.ts",
   "dependencies": {
     "expo": "~58.0.21",
