@@ -12,6 +12,14 @@ export type Novedad = {
  */
 export const NOVEDADES: Novedad[] = [
   {
+    version: "1.7.0",
+    cambios: [
+      "Mako ya puede calcular tus objetivos: en Objetivos (⚙︎), elige «Con mis datos» y dinos tu sexo, edad, altura, peso, cuánto te mueves y qué quieres conseguir. Te dice tus kcal, proteína, carbos y grasa, y de dónde sale cada número.",
+      "Puedes cambiar tus datos cuando quieras. Si cambias tu peso, los objetivos se recalculan solos.",
+      "¿Prefieres poner tus números? En «A mano» siguen tus objetivos de siempre, tal cual los tenías.",
+    ],
+  },
+  {
     version: "1.6.1",
     cambios: [
       "Ahora la pantalla del día hace scroll entera: el agua, las calorías y tus comidas se mueven juntas. Así se ve bien también en pantallas pequeñas, como la exterior de los móviles plegables.",

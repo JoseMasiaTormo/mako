@@ -1,5 +1,6 @@
 import { SQLiteDatabase } from "expo-sqlite";
 import { normalizar, type Producto100g } from "./openfoodfacts";
+import type { Perfil } from "./utils/objetivos";
 
 export type Meal = {
   id: number;
@@ -41,7 +42,7 @@ export type Totals = {
   fat: number;
 };
 
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
@@ -206,6 +207,17 @@ export async function migrate(db: SQLiteDatabase) {
       CREATE INDEX IF NOT EXISTS idx_favorito_items_fav ON favorito_items(favorito_id);
     `);
     version = 10;
+  }
+
+  if (version === 10) {
+    // Historial de peso: un registro por día (el último del día gana).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS pesos (
+        fecha TEXT PRIMARY KEY NOT NULL,
+        kg REAL NOT NULL
+      );
+    `);
+    version = 11;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
@@ -615,6 +627,65 @@ export async function saveGoals(db: SQLiteDatabase, goals: Goals) {
       await setSettings(db, key, String(goals[field as keyof Goals]));
     }
   });
+}
+
+/** "auto": los objetivos salen de tu perfil. "manual": los pones tú. */
+export type ModoObjetivos = "auto" | "manual";
+
+const PERFIL_KEYS = {
+  sexo: "perfil_sexo",
+  edad: "perfil_edad",
+  altura: "perfil_altura",
+  actividad: "perfil_actividad",
+  meta: "perfil_meta",
+  ritmo: "perfil_ritmo",
+} as const;
+
+const MODO_KEY = "obj_modo";
+
+/** El perfil guardado (con el último peso apuntado), o null si aún no se ha rellenado. */
+export async function getPerfil(db: SQLiteDatabase): Promise<Perfil | null> {
+  const keys = Object.values(PERFIL_KEYS);
+  const rows = await db.getAllAsync<{ key: string; value: string }>(
+    `SELECT key, value FROM settings WHERE key IN (${keys.map(() => "?").join(", ")})`,
+    ...keys,
+  );
+  const map: Record<string, string> = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const peso = await getPesoActual(db);
+  if (!map[PERFIL_KEYS.sexo] || !peso) return null;
+  return {
+    sexo: map[PERFIL_KEYS.sexo] as Perfil["sexo"],
+    edad: Number(map[PERFIL_KEYS.edad]) || 0,
+    altura: Number(map[PERFIL_KEYS.altura]) || 0,
+    peso,
+    actividad: (map[PERFIL_KEYS.actividad] as Perfil["actividad"]) || "sedentaria",
+    meta: (map[PERFIL_KEYS.meta] as Perfil["meta"]) || "mantener",
+    ritmo: (map[PERFIL_KEYS.ritmo] as Perfil["ritmo"]) || "normal",
+  };
+}
+
+/** Guarda el perfil y apunta el peso de hoy en el historial. */
+export async function savePerfil(db: SQLiteDatabase, perfil: Perfil, hoy: string) {
+  await db.withTransactionAsync(async () => {
+    for (const [field, key] of Object.entries(PERFIL_KEYS)) {
+      await setSettings(db, key, String(perfil[field as keyof typeof PERFIL_KEYS]));
+    }
+    await db.runAsync("INSERT OR REPLACE INTO pesos (fecha, kg) VALUES (?, ?)", hoy, perfil.peso);
+  });
+}
+
+/** El último peso apuntado, o null si no hay ninguno. */
+export async function getPesoActual(db: SQLiteDatabase) {
+  const row = await db.getFirstAsync<{ kg: number }>("SELECT kg FROM pesos ORDER BY fecha DESC LIMIT 1");
+  return row?.kg ?? null;
+}
+
+export async function getModoObjetivos(db: SQLiteDatabase): Promise<ModoObjetivos> {
+  return (await getSettings(db, MODO_KEY)) === "auto" ? "auto" : "manual";
+}
+
+export function setModoObjetivos(db: SQLiteDatabase, modo: ModoObjetivos) {
+  return setSettings(db, MODO_KEY, modo);
 }
 
 /** Total de agua (ml) bebida en un día. */
