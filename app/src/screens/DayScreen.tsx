@@ -67,7 +67,7 @@ export default function DayScreen() {
   const [goalsVisible, setGoalsVisible] = useState(false);
   const [editing, setEditing] = useState<{ meal: Meal; ingredientes: Ingrediente[] } | null>(null);
   const [reminders, setReminders] = useState<Record<TipoRecordatorio, boolean>>({ agua: false, comidas: false });
-  const [novedades, setNovedades] = useState<Novedad | null>(null);
+  const [novedades, setNovedades] = useState<Novedad[]>([]);
   const [favoritas, setFavoritas] = useState<Set<string>>(new Set());
 
   const loadFavoritas = useCallback(() => {
@@ -337,9 +337,9 @@ export default function DayScreen() {
       />
 
       <NovedadesModal
-        novedad={novedades}
+        novedades={novedades}
         onClose={() => {
-          setNovedades(null);
+          setNovedades([]);
           marcarNovedadesVistas(db).catch(() => {});
         }}
       />

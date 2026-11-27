@@ -56,12 +56,15 @@ export const NOVEDADES: Novedad[] = [
 
 const CLAVE = "novedades_vistas";
 
-/** Las novedades que el usuario aún no ha visto, o null si no hay. */
-export async function getNovedadesPendientes(db: SQLiteDatabase): Promise<Novedad | null> {
-  const ultima = NOVEDADES[0];
-  if (!ultima) return null;
+/**
+ * Las novedades que el usuario aún no ha visto, de la más reciente a la más antigua
+ * (si se ha saltado versiones, las ve todas juntas). Lista vacía si no hay nada nuevo.
+ */
+export async function getNovedadesPendientes(db: SQLiteDatabase): Promise<Novedad[]> {
   const vista = await getSettings(db, CLAVE);
-  return vista === ultima.version ? null : ultima;
+  const i = NOVEDADES.findIndex((n) => n.version === vista);
+  // Si la versión vista no está en la lista (muy antigua), enseñamos solo la última.
+  return i === -1 ? NOVEDADES.slice(0, 1) : NOVEDADES.slice(0, i);
 }
 
 /** Marca las últimas novedades como vistas (también al instalar, para no enseñarlas a quien acaba de llegar). */
